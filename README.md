@@ -13,9 +13,9 @@ measured with precision/recall/F1 in two domains that share almost nothing.*
 and `tr-law` (Turkish case law: backbone built from citations, fuzzy resolution,
 Turkish).
 
-**Status:** phase 1 complete. The `oss` backbone is live: 1,000 packages, 2,437
-dependency edges, built from configuration alone and reproducible by command.
-Phase 2 (corpus ingest and ontology-guided extraction) next.
+**Status:** phase 2 in progress. The `oss` backbone is live — 1,000 packages,
+2,437 dependency edges, built from configuration alone — and the corpus half now
+fetches GitHub issue threads and runs them through the engine's extraction.
 
 ## Quickstart
 
@@ -60,6 +60,9 @@ graphpack pack reset PACK           delete one pack's data, leave others alone
 graphpack backbone fetch PACK       download the pack's structured sources
 graphpack backbone load PACK        merge them into Neo4j (idempotent)
 graphpack backbone check PACK       run the pack's sanity queries
+graphpack ingest PACK [-n N]        run the corpus through the engine
+graphpack inspect                   report what extraction wrote
+graphpack doctor                    check models and services are reachable
 ```
 
 `graphpack packs schema oss` shows what the engine will actually extract with:
@@ -141,6 +144,38 @@ load:
 Ids are templates, so the identifier scheme is a pack decision. `{a,b|slug}`
 takes the first field that survives normalising. Uniqueness constraints are
 derived from the labels a pack declares — no pack ships a migration.
+
+The same file also says what becomes prose for the engine to extract from:
+
+```yaml
+derive:                              # JSONL to JSONL, no network
+  - id: repos
+    source: packages.jsonl
+    explode: project_urls            # a mapping yields one row per entry
+    fields: {slug: "{value|repo_slug}"}
+    require: [slug]
+    unique: slug
+
+corpus:                              # rows to documents
+  - source: issues.jsonl
+    id: "gh:{slug}#{number}"
+    text: "{title}\n\n{body}"
+    metadata: {repo: "{slug}", url: "{url}"}
+```
+
+Every document is tagged with its pack. Extraction copies source metadata onto
+the entities it produces, which is what makes an extracted entity attributable
+in a database two packs share.
+
+## Models
+
+Packs name no models. Set `LLM_PROVIDER` and `EMBEDDING_KIND` in `.env` — see
+[docs/MODELS.md](docs/MODELS.md) and `.env.sample` — and `graphpack doctor` will
+report what is active and whether it answers.
+
+Local Ollama needs three adjustments the engine does not make, without which
+extraction silently returns nothing. They are applied automatically and
+explained, with measurements, in [docs/ENGINE.md](docs/ENGINE.md).
 
 The ontology is read by the engine's OWL parser, which has opinions:
 

@@ -68,6 +68,49 @@ fetch:
       # "Code" and more; enumerating them is a game you lose slowly.
       project_urls: info.project_urls
 
+  # Issue threads — the unstructured half. One request per repository returns a
+  # page of issues, and each becomes a document. This is where package names
+  # appear as prose ("switching to httpx fixed it") rather than as metadata,
+  # which is exactly what extraction and resolution have to cope with.
+  #
+  # Unauthenticated GitHub allows 60 requests an hour, which is not enough.
+  # Export GITHUB_TOKEN (`gh auth token`) for 5,000.
+  - id: issues
+    url: "https://api.github.com/repos/{slug}/issues?state=all&per_page=30&sort=comments&direction=desc"
+    for_each: repos.jsonl
+    out: issues.jsonl
+    concurrency: 4
+    on_error: skip           # archived or renamed repositories, disabled issues
+    headers:
+      Authorization: "Bearer ${GITHUB_TOKEN}"
+      X-GitHub-Api-Version: "2022-11-28"
+    keep:
+      number: number
+      title: title
+      body: body
+      state: state
+      url: html_url
+      author: user.login
+      comments: comments
+      created_at: created_at
+      pull_request: pull_request.url
+
+derive:
+  # The repository list is already implied by the package records; asking for it
+  # again would only risk the two disagreeing. `unique` collapses the many
+  # packages that share a repository — the whole google-cloud-* family points at
+  # a handful of monorepos.
+  - id: repos
+    source: packages.jsonl
+    out: repos.jsonl
+    explode: project_urls
+    fields:
+      slug: "{value|repo_slug}"
+      package: "{name|pypi_name}"
+    require: [slug]
+    unique: slug
+    limit: 120
+
 load:
   - source: packages.jsonl
     node:
@@ -143,3 +186,21 @@ load:
       to: "pypi:{value|requirement_name}"
       properties:
         requirement: "{value}"
+
+# The unstructured half: issue threads become documents for the engine to chunk,
+# embed and extract from. What extraction pulls out of this prose is later
+# resolved against the backbone above — that comparison is the evaluation.
+corpus:
+  - source: issues.jsonl
+    id: "gh:{slug}#{number}"
+    text: "{title}\n\n{body}"
+    metadata:
+      title: "{title}"
+      repo: "{slug}"
+      url: "{url}"
+      author: "{author}"
+      state: "{state}"
+      created_at: "{created_at}"
+    where:
+      # A closed issue with an empty body is a duplicate marker, not a document.
+      body: {matches: "\\S"}

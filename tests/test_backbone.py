@@ -122,7 +122,7 @@ def test_a_load_step_reading_an_unfetched_file_is_caught(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(SourcesError, match="which no fetch step produces"):
+    with pytest.raises(SourcesError, match="nothing before it produces"):
         load_sources(tmp_path / "sources.yaml")
 
 

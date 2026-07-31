@@ -77,3 +77,41 @@ GitLab, Heptapod, self-hosted.
 **113 packages have no dependency edge in either direction.** Expected: a
 download-ranked slice includes leaf libraries with no dependencies whose own
 dependents are outside the slice.
+
+## The corpus
+
+GitHub issue threads from the repositories the backbone found. This is where
+package names appear as prose — "switching to httpx fixed it", "pin urllib3<2" —
+rather than as metadata, which is what extraction and resolution have to cope
+with.
+
+```bash
+graphpack ingest oss --limit 20     # extraction is slow; see docs/MODELS.md
+graphpack inspect oss               # what came back
+```
+
+Issues are fetched one page per repository, so no pagination is needed and the
+whole corpus costs one request per repository. `GITHUB_TOKEN` raises the rate
+limit from 60 requests an hour to 5,000.
+
+**Optional-extra dependencies are excluded but pull requests are not.** The
+issues endpoint returns both; a pull request body discusses packages just as an
+issue body does, and the `pull_request` field records which is which.
+
+### First extraction run
+
+Three documents, four chunks, llama3.1:8b locally: 271 seconds, 41 entities, 54
+relations. Every entity carried `pack: oss`, which is what makes an extracted
+entity attributable in a database two packs share.
+
+**54% of extracted relations used a type the ontology declares** —
+`REPORTED_IN`, `HAS_RELEASE`, `HOSTED_IN`, `AUTHORED`, `MAINTAINS`,
+`MENTIONS_PACKAGE`, `DEPENDS_ON`. The rest were invented: `NEEDED_FOR`,
+`ADD_DOCUMENTATION_FOR`, and one `MENioned IN`. That is the dynamic extractor
+working as documented — it takes the ontology as guidance rather than as a
+constraint. A hosted model uses the schema extractor instead, where the types
+are enforced.
+
+Entity names come back as the text said them: `jonapich`, `issue #369`,
+`boto/boto3`. Turning those into canonical identifiers is phase 3's job, and the
+reason the backbone was built first.

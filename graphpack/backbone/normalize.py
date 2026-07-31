@@ -150,15 +150,30 @@ def field(row: dict[str, Any], path: str) -> Any:
 
 
 def render(template: str, row: dict[str, Any], pipelines: dict[str, Pipeline]) -> str:
-    """Substitute ``{field|pipeline}`` placeholders from *row*.
+    """Substitute ``{field|pipeline}`` placeholders from *row*."""
+    return render_parts(template, row, pipelines)[0]
 
-    A placeholder whose field is missing renders empty, which the loader treats
-    as "this row has no such node or edge" rather than as an error. Rows are
-    external data; half of them being incomplete is normal, and failing the
-    whole load over one absent repository URL would be useless.
+
+def render_parts(
+    template: str, row: dict[str, Any], pipelines: dict[str, Pipeline]
+) -> tuple[str, bool]:
+    """Render *template*, and report whether every placeholder found a value.
+
+    The second element is what callers building identifiers need. A template
+    like ``"gh:{repo}#{number}"`` on a row with no number renders
+    ``"gh:psf/requests#"`` — a perfectly non-empty string that silently collides
+    with every other numberless row from the same repository. Inspecting the
+    output cannot distinguish that from a legitimate id; knowing that a
+    placeholder came back empty can.
+
+    Rows are external data and half-complete records are normal, so an unfilled
+    placeholder is reported rather than raised: the caller decides whether this
+    row simply has no such node, edge or document.
     """
+    complete = True
 
     def _substitute(match: re.Match[str]) -> str:
+        nonlocal complete
         paths, pipeline_name = match.group(1).split(","), match.group(2)
         pipeline = None
         if pipeline_name:
@@ -180,9 +195,10 @@ def render(template: str, row: dict[str, Any], pipelines: dict[str, Pipeline]) -
             # Only then is the next candidate worth trying.
             if text:
                 return text
+        complete = False
         return ""
 
-    return _PLACEHOLDER.sub(_substitute, template)
+    return _PLACEHOLDER.sub(_substitute, template), complete
 
 
 def referenced_pipelines(template: str) -> set[str]:

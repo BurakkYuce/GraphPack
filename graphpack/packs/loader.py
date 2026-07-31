@@ -22,6 +22,7 @@ import logging
 import os
 from typing import Any
 
+from graphpack.models import extractor_type_for, properties_supported, tune_llm
 from graphpack.packs.contract import Pack
 from graphpack.packs.ontology import CompiledSchema, compile_ontology
 
@@ -102,12 +103,17 @@ def build_settings(pack: Pack, schema: CompiledSchema | None = None):
     clear_engine_env()
     schema = schema or compile_pack_schema(pack)
 
+    # Which extractor works, and whether it can carry properties, depends on the
+    # provider rather than on the pack. See graphpack/models.py for what was
+    # measured and why.
+    provider = pack.llm_provider or os.getenv("LLM_PROVIDER") or ""
     kwargs: dict[str, Any] = {
         # Extraction schema, compiled from the pack ontology.
         "schema_name": pack.name,
         "schemas": [{"name": pack.name, "schema": schema.as_engine_schema()}],
         "use_ontology": False,
-        "kg_extractor_type": "schema",
+        "kg_extractor_type": extractor_type_for(provider),
+        "disable_properties": not properties_supported(provider),
         "strict_schema_validation": pack.strict_schema,
         "max_triplets_per_chunk": pack.max_triplets_per_chunk,
         "enable_knowledge_graph": True,
@@ -150,7 +156,12 @@ def build_system(pack: Pack, schema: CompiledSchema | None = None):
     """
     from hybrid_system import HybridSearchSystem  # engine module
 
-    return HybridSearchSystem.from_settings(build_settings(pack, schema))
+    settings = build_settings(pack, schema)
+    system = HybridSearchSystem.from_settings(settings)
+    # Adjust the LLM the engine just built. The engine assigns the same object
+    # to LlamaIndex's global Settings, so this reaches every consumer of it.
+    tune_llm(system.llm, settings.llm_provider)
+    return system
 
 
 def _log_effective_config(pack: Pack, settings) -> None:

@@ -49,12 +49,38 @@ class FetchSpec:
     limit: int | None = None
     for_each: str | None = None
     keep: dict[str, str] = field(default_factory=dict)
+    #: Request headers. Values may contain ``${VAR}``, expanded from the
+    #: environment at request time so credentials stay out of the pack.
+    headers: dict[str, str] = field(default_factory=dict)
     concurrency: int = 8
     on_error: str = "fail"
 
     @property
     def skips_errors(self) -> bool:
         return self.on_error == "skip"
+
+
+@dataclass(frozen=True)
+class DeriveSpec:
+    """A JSONL-to-JSONL transformation. No network.
+
+    Fetching is not the only way to get a record set: the interesting one is
+    often already implied by an earlier response. Deriving the repository list
+    from the package records, rather than re-requesting it, keeps the two in
+    step and costs nothing.
+    """
+
+    id: str
+    source: str
+    out: str
+    fields: dict[str, str]
+    explode: str | None = None
+    where: dict[str, dict[str, str]] = field(default_factory=dict)
+    #: Output fields that must render non-empty; a row missing any is dropped.
+    require: tuple[str, ...] = ()
+    #: Field whose value identifies a row. Later duplicates are discarded.
+    unique: str | None = None
+    limit: int | None = None
 
 
 @dataclass(frozen=True)
@@ -93,12 +119,40 @@ class LoadSpec:
 
 
 @dataclass(frozen=True)
+class CorpusSpec:
+    """One JSONL file becoming documents for the engine's ingest pipeline.
+
+    The unstructured half of a pack. Where ``load`` produces the graph directly,
+    this produces text that the engine chunks, embeds and extracts from — and
+    whose extracted entities are later resolved against what ``load`` built.
+    """
+
+    source: str
+    id: str
+    text: str
+    metadata: dict[str, str] = field(default_factory=dict)
+    where: dict[str, dict[str, str]] = field(default_factory=dict)
+    limit: int | None = None
+
+    @property
+    def describes(self) -> str:
+        return f"corpus:{self.source}"
+
+
+@dataclass(frozen=True)
 class Sources:
     """A parsed ``sources.yaml``."""
 
     fetch: tuple[FetchSpec, ...]
+    derive: tuple[DeriveSpec, ...]
     load: tuple[LoadSpec, ...]
+    corpus: tuple[CorpusSpec, ...]
     pipelines: dict[str, Pipeline]
+
+    @property
+    def produced_files(self) -> set[str]:
+        """Every JSONL a run of this pack writes."""
+        return {spec.out for spec in self.fetch} | {spec.out for spec in self.derive}
 
     @property
     def node_labels(self) -> list[str]:
@@ -133,14 +187,17 @@ def load_sources(path: Path) -> Sources:
     except NormalizeError as exc:
         raise SourcesError(f"{path}: {exc}") from exc
 
-    fetch = tuple(
-        _parse_fetch(item, path, index) for index, item in enumerate(_seq(raw, "fetch", path))
+    sources = Sources(
+        fetch=tuple(_parse_fetch(item, path, i) for i, item in enumerate(_seq(raw, "fetch", path))),
+        derive=tuple(
+            _parse_derive(item, path, i) for i, item in enumerate(_seq(raw, "derive", path))
+        ),
+        load=tuple(_parse_load(item, path, i) for i, item in enumerate(_seq(raw, "load", path))),
+        corpus=tuple(
+            _parse_corpus(item, path, i) for i, item in enumerate(_seq(raw, "corpus", path))
+        ),
+        pipelines=pipelines,
     )
-    load = tuple(
-        _parse_load(item, path, index) for index, item in enumerate(_seq(raw, "load", path))
-    )
-
-    sources = Sources(fetch=fetch, load=load, pipelines=pipelines)
     _check_consistency(sources, path)
     return sources
 
@@ -176,8 +233,61 @@ def _parse_fetch(item: Any, path: Path, index: int) -> FetchSpec:
         limit=_opt_int(item.get("limit")),
         for_each=_opt_str(item.get("for_each")),
         keep={str(k): str(v) for k, v in keep.items()},
+        headers=_str_map(item.get("headers"), f"{where}: headers"),
         concurrency=int(item.get("concurrency", 8)),
         on_error=on_error,
+    )
+
+
+def _parse_derive(item: Any, path: Path, index: int) -> DeriveSpec:
+    where = f"{path}: derive[{index}]"
+    if not isinstance(item, dict):
+        raise SourcesError(f"{where} must be a mapping")
+    for required in ("id", "source", "out", "fields"):
+        if not item.get(required):
+            raise SourcesError(f"{where} is missing '{required}'")
+
+    fields = _str_map(item.get("fields"), f"{where}: fields")
+    require = tuple(str(name) for name in (item.get("require") or []))
+    unknown = set(require) - set(fields)
+    if unknown:
+        raise SourcesError(
+            f"{where}: 'require' names field(s) {sorted(unknown)} that this step does not produce"
+        )
+    unique = _opt_str(item.get("unique"))
+    if unique and unique not in fields:
+        raise SourcesError(
+            f"{where}: 'unique' names field '{unique}' that this step does not produce"
+        )
+
+    return DeriveSpec(
+        id=str(item["id"]),
+        source=str(item["source"]),
+        out=str(item["out"]),
+        fields=fields,
+        explode=_opt_str(item.get("explode")),
+        where=_conditions(item.get("where"), where),
+        require=require,
+        unique=unique,
+        limit=_opt_int(item.get("limit")),
+    )
+
+
+def _parse_corpus(item: Any, path: Path, index: int) -> CorpusSpec:
+    where = f"{path}: corpus[{index}]"
+    if not isinstance(item, dict):
+        raise SourcesError(f"{where} must be a mapping")
+    for required in ("source", "id", "text"):
+        if not item.get(required):
+            raise SourcesError(f"{where} is missing '{required}'")
+
+    return CorpusSpec(
+        source=str(item["source"]),
+        id=str(item["id"]),
+        text=str(item["text"]),
+        metadata=_str_map(item.get("metadata"), f"{where}: metadata"),
+        where=_conditions(item.get("where"), where),
+        limit=_opt_int(item.get("limit")),
     )
 
 
@@ -217,7 +327,18 @@ def _parse_load(item: Any, path: Path, index: int) -> LoadSpec:
             properties=_str_map(spec.get("properties"), f"{where}: edge.properties"),
         )
 
-    conditions = item.get("where") or {}
+    return LoadSpec(
+        source=str(item["source"]),
+        node=node,
+        edge=edge,
+        explode=_opt_str(item.get("explode")),
+        where=_conditions(item.get("where"), where),
+    )
+
+
+def _conditions(raw: Any, where: str) -> dict[str, dict[str, str]]:
+    """Parse a ``where:`` block — row filters shared by derive, load and corpus."""
+    conditions = raw or {}
     if not isinstance(conditions, dict):
         raise SourcesError(f"{where}: 'where' must be a mapping of field to condition")
     for field_name, condition in conditions.items():
@@ -229,14 +350,7 @@ def _parse_load(item: Any, path: Path, index: int) -> LoadSpec:
                 f"{where}: where.{field_name} has unknown condition(s) {sorted(unknown)}; "
                 "supported: matches, not_matches"
             )
-
-    return LoadSpec(
-        source=str(item["source"]),
-        node=node,
-        edge=edge,
-        explode=_opt_str(item.get("explode")),
-        where={str(k): {str(ck): str(cv) for ck, cv in v.items()} for k, v in conditions.items()},
-    )
+    return {str(k): {str(ck): str(cv) for ck, cv in v.items()} for k, v in conditions.items()}
 
 
 def _check_consistency(sources: Sources, path: Path) -> None:
@@ -247,32 +361,68 @@ def _check_consistency(sources: Sources, path: Path) -> None:
     loads nothing.
     """
     known_pipelines = set(sources.pipelines)
-    for spec in sources.load:
-        templates = []
-        if spec.node:
-            templates = [spec.node.id, *spec.node.properties.values()]
-        elif spec.edge:
-            templates = [spec.edge.start, spec.edge.end, *spec.edge.properties.values()]
+    for describes, templates in _all_templates(sources):
         for template in templates:
             missing = referenced_pipelines(template) - known_pipelines
             if missing:
                 raise SourcesError(
-                    f"{path}: load step '{spec.describes}' references undefined "
+                    f"{path}: step '{describes}' references undefined "
                     f"normalize pipeline(s) {sorted(missing)}"
                 )
 
-    produced = {spec.out for spec in sources.fetch}
-    for spec in sources.load:
-        if produced and spec.source not in produced:
-            raise SourcesError(
-                f"{path}: load step '{spec.describes}' reads '{spec.source}', "
-                f"which no fetch step produces (produced: {sorted(produced)})"
-            )
+    # Walk the steps in the order they actually execute — each fetch, then any
+    # derive that reads its output — so a pack whose issue fetch is declared
+    # before the derive that builds its input list fails here rather than
+    # halfway through a download.
+    # A pack that declares no acquisition reads files placed by hand, and there
+    # is nothing to check against. Once it declares any, every source must be
+    # accounted for — including the first one, which an "is anything known yet"
+    # guard would wave through.
+    tracked = bool(sources.fetch or sources.derive)
+    available: set[str] = set()
+    for spec in sources.fetch:
+        if spec.for_each:
+            _require_source(spec.for_each, available, f"fetch step '{spec.id}'", path, tracked)
+        available.add(spec.out)
+        for derived in sources.derive:
+            if derived.source == spec.out:
+                available.add(derived.out)
 
-    fetch_ids = [spec.id for spec in sources.fetch]
-    duplicates = {i for i in fetch_ids if fetch_ids.count(i) > 1}
+    orphans = [d.id for d in sources.derive if d.out not in available]
+    if orphans:
+        raise SourcesError(f"{path}: derive step(s) {orphans} read a file no fetch step produces")
+
+    for spec in sources.load:
+        _require_source(spec.source, available, f"load step '{spec.describes}'", path, tracked)
+    for spec in sources.corpus:
+        _require_source(spec.source, available, f"corpus step '{spec.describes}'", path, tracked)
+
+    ids = [spec.id for spec in sources.fetch] + [spec.id for spec in sources.derive]
+    duplicates = {i for i in ids if ids.count(i) > 1}
     if duplicates:
-        raise SourcesError(f"{path}: duplicate fetch id(s) {sorted(duplicates)}")
+        raise SourcesError(f"{path}: duplicate fetch/derive id(s) {sorted(duplicates)}")
+
+
+def _all_templates(sources: Sources):
+    for spec in sources.derive:
+        yield f"derive:{spec.id}", list(spec.fields.values())
+    for spec in sources.load:
+        if spec.node:
+            yield spec.describes, [spec.node.id, *spec.node.properties.values()]
+        elif spec.edge:
+            yield spec.describes, [spec.edge.start, spec.edge.end, *spec.edge.properties.values()]
+    for spec in sources.corpus:
+        yield spec.describes, [spec.id, spec.text, *spec.metadata.values()]
+
+
+def _require_source(
+    source: str, available: set[str], describes: str, path: Path, tracked: bool
+) -> None:
+    if tracked and source not in available:
+        raise SourcesError(
+            f"{path}: {describes} reads '{source}', which nothing before it produces "
+            f"(available: {sorted(available)})"
+        )
 
 
 def _str_map(value: Any, where: str) -> dict[str, str]:

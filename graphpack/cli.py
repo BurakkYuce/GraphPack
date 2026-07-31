@@ -48,6 +48,12 @@ err_console = Console(stderr=True)
 def _root(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show debug logging."),
 ) -> None:
+    # Load .env before anything reads the environment. The engine's Settings
+    # does its own loading, but our own commands — doctor, and the credentials
+    # a pack's fetch headers expand — use os.getenv directly and would
+    # otherwise see only the shell.
+    _load_dotenv()
+
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(levelname)-7s %(name)s: %(message)s",
@@ -63,10 +69,48 @@ def _root(
     logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
 
 
+def _load_dotenv() -> None:
+    """Read ``.env`` from the repository root.
+
+    Anchored to the repository rather than the working directory: the engine
+    resolves its own ``.env`` against the process cwd, and running from the
+    wrong place is how a pack ends up writing to somebody else's database.
+    """
+    from dotenv import load_dotenv
+
+    from graphpack.paths import REPO_ROOT
+
+    env_file = REPO_ROOT / ".env"
+    if env_file.is_file():
+        load_dotenv(env_file, override=False)
+
+
 @app.command()
 def version() -> None:
     """Print the GraphPack version."""
     console.print(f"graphpack {__version__}")
+
+
+@app.command()
+def doctor() -> None:
+    """Check that everything an ingest needs is reachable.
+
+    Exits non-zero if anything would stop a run, so it can gate a long ingest.
+    """
+    from graphpack.doctor import run_checks
+
+    checks = run_checks()
+    for check in checks:
+        mark = "[green]OK[/green]  " if check.ok else "[red]FAIL[/red]"
+        console.print(f"{mark} {check.name:<10} {check.detail}")
+        if not check.ok and check.fix:
+            console.print(f"          [dim]{check.fix}[/dim]")
+
+    failed = [c for c in checks if not c.ok]
+    if failed:
+        console.print(f"\n[red]{len(failed)} check(s) failed.[/red]")
+        raise typer.Exit(code=1)
+    console.print("\n[green]Ready to ingest.[/green]")
 
 
 # ----------------------------------------------------------------------
@@ -379,6 +423,134 @@ def backbone_check(
         raise typer.Exit(code=1)
 
 
+@app.command("ingest")
+def ingest_command(
+    pack: str = typer.Argument(..., help="Pack whose corpus to ingest."),
+    limit: int | None = typer.Option(
+        None, "--limit", "-n", help="Ingest only the first N documents."
+    ),
+    skip_graph: bool = typer.Option(
+        False,
+        "--skip-graph",
+        help="Chunk, embed and index, but do not extract. Cheap way to check the corpus.",
+    ),
+) -> None:
+    """Run the pack's documents through the engine.
+
+    Extraction calls the LLM once per chunk, so a full pack takes hours on a
+    local model. Use --limit while the ontology is still being tuned.
+    """
+    from graphpack.doctor import run_checks
+    from graphpack.ingest import ingest_pack
+
+    loaded = load_pack(pack)
+
+    blocking = [c for c in run_checks() if not c.ok]
+    if blocking:
+        for check in blocking:
+            err_console.print(f"[red]FAIL[/red] {check.name}: {check.detail}")
+            if check.fix:
+                err_console.print(f"       [dim]{check.fix}[/dim]")
+        err_console.print("\nRun `graphpack doctor` for the full report.")
+        raise typer.Exit(code=1)
+
+    report = ingest_pack(loaded, limit=limit, skip_graph=skip_graph)
+    console.print(
+        f"[green]Ingested {report.documents:,} document(s)[/green] in {report.seconds:.1f}s — "
+        f"{report.entities_added:,} extracted entities added "
+        f"({report.entities_before:,} → {report.entities_after:,})"
+    )
+
+
+@app.command("inspect")
+def inspect_command(
+    pack: str | None = typer.Argument(
+        None, help="Pack to compare extracted relations against its ontology."
+    ),
+    samples: int = typer.Option(3, "--samples", help="How many entity nodes to print."),
+) -> None:
+    """Report what extraction wrote: entity labels, properties, pack tags.
+
+    Answers the two questions a resolution pass depends on — what an entity node
+    looks like, and whether the pack tag survives extraction — and, given a pack,
+    how much of what came back its ontology actually asked for.
+    """
+    from graphpack.backbone import session_scope
+    from graphpack.inspect import chunk_shape, inspect_entities, relationship_shape
+
+    declared: set[str] = set()
+    if pack:
+        declared = set(compile_ontology(load_pack(pack).ontology_path).relations)
+
+    with session_scope() as session:
+        shape = inspect_entities(session, sample_size=samples)
+        relationships = relationship_shape(session, declared)
+        chunks = chunk_shape(session)
+
+    if not shape.total:
+        console.print("[yellow]No extracted entities in the graph.[/yellow]")
+        console.print("[dim]Run `graphpack ingest <pack>` first.[/dim]")
+        return
+
+    console.print(f"[bold]{shape.total:,} extracted entities[/bold]\n")
+
+    table = Table("label", "entities")
+    for label, count in shape.labels.most_common():
+        table.add_row(label, f"{count:,}")
+    console.print(table)
+
+    table = Table("property", "entities carrying it")
+    for name, count in shape.properties.most_common():
+        table.add_row(name, f"{count:,}")
+    console.print(table)
+
+    table = Table("pack tag", "entities")
+    for value, count in shape.pack_values.most_common():
+        table.add_row(value, f"{count:,}")
+    console.print(table)
+
+    if shape.pack_tag_survives:
+        console.print("[green]Pack tag survives extraction[/green] — entities are attributable.")
+    else:
+        console.print(
+            f"[red]{shape.untagged:,} entities carry no pack tag.[/red] Attribution must fall "
+            "back to the source chunk."
+        )
+
+    if relationships.counts:
+        table = Table("relationship", "count", "in ontology" if declared else "")
+        for name, count in relationships.counts:
+            mark = ""
+            if declared:
+                mark = "[green]yes[/green]" if name in declared else "[yellow]no[/yellow]"
+            table.add_row(name, f"{count:,}", mark)
+        console.print(table)
+        if declared:
+            console.print(
+                f"[bold]{relationships.conformance:.0%} of extracted relations "
+                f"({relationships.in_ontology}/"
+                f"{relationships.in_ontology + relationships.outside_ontology}) "
+                "use a type the ontology declares.[/bold]"
+            )
+            console.print(
+                "[dim]On the dynamic extractor the ontology guides rather than constrains, so "
+                "this sits below 100% by design. Near zero would mean the schema never "
+                "reached the extractor.[/dim]"
+            )
+
+    console.print(f"\n[bold]{chunks['total']:,} text chunks[/bold]")
+    if chunks["properties"]:
+        console.print("  " + ", ".join(sorted(chunks["properties"])))
+
+    for index, sample in enumerate(shape.samples, start=1):
+        trimmed = {
+            k: (v[:80] + "…" if isinstance(v, str) and len(v) > 80 else v)
+            for k, v in sample.items()
+            if k != "embedding"
+        }
+        console.print(f"\n[dim]sample {index}:[/dim] {trimmed}")
+
+
 def main() -> None:
     """Turn the expected failures into one-line messages.
 
@@ -389,13 +561,17 @@ def main() -> None:
     from graphpack.backbone import FetchError, LoadError, SourcesError
     from graphpack.backbone.checks import CheckError
     from graphpack.backbone.normalize import NormalizeError
+    from graphpack.corpus import CorpusError
+    from graphpack.ingest import IngestError
     from graphpack.migrations import MigrationError
 
     try:
         app()
     except (
         CheckError,
+        CorpusError,
         FetchError,
+        IngestError,
         LoadError,
         MigrationError,
         NormalizeError,

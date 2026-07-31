@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from graphpack.backbone.fetch import read_jsonl
-from graphpack.backbone.normalize import field, render
+from graphpack.backbone.normalize import field, render, render_parts
 from graphpack.backbone.sources import EdgeSpec, LoadSpec, NodeSpec, Sources
 
 logger = logging.getLogger(__name__)
@@ -238,44 +238,47 @@ def _passes(row: dict[str, Any], spec: LoadSpec) -> bool:
 
 
 def _render_node(spec: NodeSpec, row: dict[str, Any], sources: Sources) -> dict[str, Any] | None:
-    identity = render(spec.id, row, sources.pipelines).strip()
-    if not _is_complete(identity):
+    identity = _identity(spec.id, row, sources)
+    if identity is None:
         return None
-    properties = {
-        name: value
-        for name, template in spec.properties.items()
-        if (value := render(template, row, sources.pipelines).strip())
-    }
-    return {"id": identity, "props": properties}
+    return {"id": identity, "props": _properties(spec.properties, row, sources)}
 
 
 def _render_edge(spec: EdgeSpec, row: dict[str, Any], sources: Sources) -> dict[str, Any] | None:
-    start = render(spec.start, row, sources.pipelines).strip()
-    end = render(spec.end, row, sources.pipelines).strip()
-    if not _is_complete(start) or not _is_complete(end) or start == end:
+    start = _identity(spec.start, row, sources)
+    end = _identity(spec.end, row, sources)
+    if start is None or end is None or start == end:
         # A self-edge here always means a rendering artefact rather than a real
         # relationship — nothing in a dependency graph depends on itself.
         return None
-    properties = {
+    return {"start": start, "end": end, "props": _properties(spec.properties, row, sources)}
+
+
+def _properties(templates: dict[str, str], row: dict[str, Any], sources: Sources) -> dict[str, str]:
+    """Render a step's properties, dropping the ones that come out empty.
+
+    Unlike identifiers, a missing property is simply absent: writing an empty
+    string would claim the record says something it does not.
+    """
+    return {
         name: value
-        for name, template in spec.properties.items()
+        for name, template in templates.items()
         if (value := render(template, row, sources.pipelines).strip())
     }
-    return {"start": start, "end": end, "props": properties}
 
 
-def _is_complete(identity: str) -> bool:
-    """Reject ids left incomplete by a missing field.
+def _identity(template: str, row: dict[str, Any], sources: Sources) -> str | None:
+    """Render an identifier, or ``None`` when the row cannot supply one.
 
-    A template like ``"gh:{repo_url|repo_slug}"`` renders to the bare prefix
-    when the package has no repository URL. Writing that would give every such
-    package the same node — one shared, meaningless neighbour that quietly
-    corrupts every traversal through it.
+    Completeness is judged by whether every placeholder found a value, not by
+    inspecting the result. ``"pypi:{name}@{version}"`` on a row with no version
+    renders ``"pypi:requests@"`` — a plausible-looking string that no amount of
+    trimming distinguishes from a real id, and that every other versionless row
+    for that package would share.
     """
-    if not identity:
-        return False
-    body = identity.split(":", 1)[1] if ":" in identity else identity
-    return bool(body.strip(" @/"))
+    identity, complete = render_parts(template, row, sources.pipelines)
+    identity = identity.strip()
+    return identity if identity and complete else None
 
 
 # ----------------------------------------------------------------------

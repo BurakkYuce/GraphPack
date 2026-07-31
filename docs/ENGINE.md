@@ -89,6 +89,43 @@ A relation without `rdfs:range` is paired with *every* entity type, which is why
 full-text leg of hybrid search exists only inside the process that ingested. From
 phase 2 onward, ingest and query therefore share one long-lived process.
 
+**Ollama is missing from the incompatible-provider list.** `SchemaManager`
+switches bedrock, fireworks, groq, openai_like, openrouter and vllm to
+`DynamicLLMPathExtractor` because their tool calling does not survive
+`SchemaLLMPathExtractor`. Ollama is not on that list, although the comment at
+`schema_manager.py:108` says it has "the same tool_choice conflict as direct
+Ollama". Run as configured, extraction returns zero entities and raises nothing.
+`graphpack/models.py` adds ollama to the switch on GraphPack's side.
+
+**Properties break the dynamic path for ordinary ontologies.**
+`DynamicLLMPathExtractor` selects its prompt at construction: given any property
+list it binds the with-properties template. The engine then sets
+`allowed_relation_props` to None whenever the schema declares no relation
+properties — and LlamaIndex's `_aextract` only takes the with-properties code
+path when *both* lists are non-None. An ontology with entity properties and no
+relation properties therefore formats the with-properties template through the
+without-properties path, and the model receives a prompt containing the literal
+text `{allowed_entity_properties}`. GraphPack sets `disable_properties=True` for
+providers on the dynamic path, which keeps both lists unset so LlamaIndex picks
+the plain template.
+
+**The Ollama context window is never set.** The engine constructs
+`Ollama(model, base_url, temperature, request_timeout)` and passes no context
+window, so LlamaIndex leaves it at -1 until the first call, asks the model, and
+caches whatever it advertises — 131,072 for llama3.1. Ollama sizes its KV cache
+to match, which is 14.5 GB of a 16 GB machine. `tune_llm` sets it outright
+rather than conditionally, because at construction time the value is still
+unresolved and any "is it too large" test sees -1.
+
+Measured together, on llama3.1:8b, M4, 16 GB, one 150-character chunk:
+
+| configuration | time | result |
+|---|---:|---|
+| as the engine configures it | 140 s | 0 entities |
+| dynamic extractor | 118 s | 0 entities |
+| + context window 8192 | 34 s | 0 entities |
+| + properties disabled | 20 s | 10 entities, 5 relations |
+
 **Neo4j is Community edition**, which supports exactly one database. Packs share
 `neo4j` and are separated by a `pack` property on every node.
 

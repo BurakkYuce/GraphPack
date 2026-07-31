@@ -22,10 +22,12 @@ extraction:
   chunk_size: 1024
   chunk_overlap: 128
 
+# Models are left unset on purpose. The engine derives provider, model and
+# credentials from the environment, so the same pack runs against a local Ollama
+# during development and a hosted API for the measured run without editing this
+# file. See docs/MODELS.md and .env.sample; `graphpack doctor` reports which is
+# active and whether it answers.
 llm:
-  # Left unset: the engine derives provider and credentials from the
-  # environment. Development runs against a local Ollama, the final measured
-  # run against a hosted API — the pack does not need to know which.
   provider: null
   config: {}
 

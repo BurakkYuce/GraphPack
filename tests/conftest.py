@@ -72,6 +72,22 @@ MINIMAL_SOURCES = textwrap.dedent(
     """
 )
 
+MINIMAL_RESOLVE = textwrap.dedent(
+    """\
+    normalize:
+      slug:
+        - lower
+        - {regex_replace: {pattern: "[-_.]+", replace: "-"}}
+
+    resolve:
+      - entity: WIDGET
+        target: Widget
+        id: "w:{name|slug}"
+        methods: [exact]
+        on_unresolved: drop
+    """
+)
+
 
 @pytest.fixture
 def pack_dir(tmp_path: Path):
@@ -86,6 +102,7 @@ def pack_dir(tmp_path: Path):
         pack_yaml: str | None = None,
         ontology: str | None = None,
         sources: str | None = None,
+        resolve: str | None = None,
     ):
         root = domains / name
         root.mkdir(parents=True, exist_ok=True)
@@ -98,6 +115,9 @@ def pack_dir(tmp_path: Path):
         )
         (root / "sources.yaml").write_text(
             MINIMAL_SOURCES if sources is None else sources, encoding="utf-8"
+        )
+        (root / "resolve.yaml").write_text(
+            MINIMAL_RESOLVE if resolve is None else resolve, encoding="utf-8"
         )
         return root
 

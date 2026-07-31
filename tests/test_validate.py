@@ -26,8 +26,48 @@ def test_valid_pack_passes_with_notes_for_later_phases(domains):
     assert result.ok, result.errors
     assert "2 entity types" in result.summary
     assert "backbone: 1 fetch, 1 load" in result.summary
+    assert "resolve: 1 rule" in result.summary
     # Files belonging to phases that have not landed are notes, not failures.
-    assert any("resolve.yaml" in w for w in result.warnings)
+    assert any("eval.yaml" in w for w in result.warnings)
+
+
+def test_an_entity_type_with_no_resolve_rule_is_a_note(domains):
+    """Not every extracted type has a canonical form, so this is not an error —
+    but silence would let an omission pass for coverage."""
+    domains("widgets")
+
+    result = validate_pack("widgets")
+
+    assert result.ok
+    assert any("no resolve rule for FACTORY" in w for w in result.warnings)
+
+
+def test_a_rule_for_an_entity_the_ontology_does_not_declare_is_an_error(domains):
+    """It would match no mention and report nothing — a rule that quietly does
+    no work at all."""
+    domains(
+        "widgets",
+        resolve='resolve:\n  - {entity: GHOST, target: Widget, id: "w:{name}"}\n',
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("ontology does not declare" in e for e in result.errors)
+
+
+def test_a_rule_targeting_a_label_no_load_step_writes_is_an_error(domains):
+    """Resolution would find no candidates and drop every mention, which looks
+    exactly like a corpus that mentions nothing."""
+    domains(
+        "widgets",
+        resolve='resolve:\n  - {entity: WIDGET, target: Sprocket, id: "w:{name}"}\n',
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("no load step writes" in e for e in result.errors)
 
 
 def test_a_file_required_by_an_implemented_phase_is_an_error(domains):

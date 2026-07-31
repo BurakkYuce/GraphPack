@@ -1,0 +1,101 @@
+# Turning what the text said into what the index calls it.
+#
+# Extraction names things the way the issue thread named them — "urllib3 2.0",
+# "boto/boto3", "PIL". The backbone holds identifiers built from published
+# metadata. This file is the join.
+#
+# Methods are listed most trustworthy first and the first answer wins, so each
+# rule reads as a fallback chain. The report says how many mentions each method
+# accounted for, which matters more than the total: 95% resolved by exact match
+# and 95% resolved by fuzzy match are not the same claim.
+#
+# This domain is the easy half of the thesis on purpose. A Python package name
+# written in prose usually *is* the package name, so `exact` should carry most
+# of the weight. The tr-law pack is the opposite — citations are written a dozen
+# ways and almost nothing matches exactly — and the two method distributions
+# side by side are what the generality claim rests on.
+
+normalize:
+  # Same rule as the backbone uses for package identifiers (PEP 503), because
+  # both sides of the join have to agree on what a name looks like.
+  pypi_name:
+    - strip
+    - lower
+    - {regex_replace: {pattern: "[-_.]+", replace: "-"}}
+
+  # Mentions arrive decorated: a version ("urllib3 2.0"), a specifier
+  # ("urllib3<2"), an extra ("celery[redis]"), a module path ("urllib3.util"),
+  # backticks or quotes. Take the leading distribution name and drop the rest.
+  mention_name:
+    - strip
+    - {regex_replace: {pattern: "^[`'\"\\s]+", replace: ""}}
+    - {regex_extract: {pattern: "^([A-Za-z0-9][A-Za-z0-9._-]*)"}}
+    - lower
+    - {regex_replace: {pattern: "[-_.]+", replace: "-"}}
+
+  # The version part of a mention like "urllib3 2.0" or "requests==2.31.0".
+  # Renders empty when the mention names no version, which leaves the release
+  # identifier incomplete and drops the mention — a bare "2.0" belongs to no
+  # package in particular.
+  version_only:
+    - strip
+    - {regex_extract: {pattern: "([0-9]+(?:\\.[0-9]+)+[A-Za-z0-9.-]*)"}}
+
+  # Repositories are mentioned as owner/repo, or as a URL to any page inside
+  # one. The host prefix is optional but tried first, so a URL yields the pair
+  # after github.com rather than the host itself — without it,
+  # "https://github.com/psf/requests/issues" resolves to "github.com/psf".
+  repo_slug:
+    - strip
+    - lower
+    - {regex_extract: {pattern: "(?:github\\.com[:/]+)?([A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*)"}}
+    - {regex_replace: {pattern: "\\.git$", replace: ""}}
+
+# ISSUE, PERSON and VULNERABILITY have no rules on purpose: the backbone holds
+# nothing to resolve them against. Issues arrive as documents rather than as
+# backbone nodes, and neither maintainers nor advisories are loaded. Mentions of
+# those types stay as extraction left them — visible, unlinked, and honest about
+# it. `packs validate` says so on every run rather than letting the omission
+# pass for coverage.
+resolve:
+  - entity: PACKAGE
+    target: Package
+    id: "pypi:{name|mention_name}"
+    match: "{name|mention_name}"
+    methods: [exact, alias, fuzzy]
+    # 93 rather than something lower: package names are short, and short strings
+    # score high against each other. `idna` and `ida` reach the mid-80s, and
+    # both are real packages — a threshold that admits them would be inventing
+    # dependencies rather than finding them.
+    fuzzy_threshold: 93
+    fuzzy_field: name
+    # Kept rather than dropped: a package the top-1000 slice does not contain is
+    # still a real package, and the set of unresolved mentions is exactly where
+    # the next alias entries come from.
+    on_unresolved: provisional
+
+  - entity: REPOSITORY
+    target: Repository
+    id: "gh:{name|repo_slug}"
+    match: "{name|repo_slug}"
+    methods: [exact, alias]
+    # No fuzzy: an owner/repo pair is either right or it is somebody else's
+    # repository. `psf/requests` and `psf/requests-html` differ by a suffix and
+    # score high, and confusing them is worse than leaving the mention unplaced.
+    #
+    # Accepting bare pairs means any "x/y" in the text produces a candidate —
+    # "readthedocs.io/en" from a docs URL, for instance. Those are not in the
+    # backbone, so no method matches and the mention drops. Building a candidate
+    # that cannot match costs nothing; refusing bare pairs would cost every
+    # mention written as "boto/boto3", which is how issue threads write them.
+    on_unresolved: drop
+
+  - entity: RELEASE
+    target: Release
+    # Releases carry the package in their identifier, so a bare version string
+    # ("2.0") cannot be resolved on its own. Only mentions that name both —
+    # "urllib3 2.0" — reach a canonical release, and the rest drop.
+    id: "pypi:{name|mention_name}@{name|version_only}"
+    match: "{name|mention_name}"
+    methods: [exact]
+    on_unresolved: drop

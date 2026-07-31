@@ -1,0 +1,25 @@
+entity,surface,id,note
+# Surface forms that map to an identifier no string distance would find.
+#
+# This table is written by hand and grown from the mentions resolution failed
+# on: run `graphpack resolve report oss`, read the unresolved samples, and add
+# the ones that are genuinely the same thing under another name. It is the
+# cheapest part of the loop — re-resolving takes seconds, where re-extracting
+# takes hours.
+#
+# Only entries that are *not* reachable by normalisation belong here. `PyYAML`
+# already resolves to `pypi:pyyaml` by lowercasing, so adding it would be noise.
+PACKAGE,PIL,pypi:pillow,import name of Pillow
+PACKAGE,sklearn,pypi:scikit-learn,import name
+PACKAGE,cv2,pypi:opencv-python,import name
+PACKAGE,yaml,pypi:pyyaml,import name
+PACKAGE,bs4,pypi:beautifulsoup4,import name
+PACKAGE,dateutil,pypi:python-dateutil,import name
+PACKAGE,attr,pypi:attrs,import name
+PACKAGE,OpenSSL,pypi:pyopenssl,import name
+PACKAGE,jwt,pypi:pyjwt,import name
+PACKAGE,dotenv,pypi:python-dotenv,import name
+PACKAGE,google-cloud-storage-client,pypi:google-cloud-storage,common miswrite
+PACKAGE,requests-lib,pypi:requests,common miswrite
+PACKAGE,the requests library,pypi:requests,prose form
+PACKAGE,boto,pypi:boto3,superseded by boto3

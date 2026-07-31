@@ -61,7 +61,9 @@ graphpack backbone fetch PACK       download the pack's structured sources
 graphpack backbone load PACK        merge them into Neo4j (idempotent)
 graphpack backbone check PACK       run the pack's sanity queries
 graphpack ingest PACK [-n N]        run the corpus through the engine
-graphpack inspect                   report what extraction wrote
+graphpack inspect [PACK]            report what extraction wrote
+graphpack resolve PACK              link mentions to canonical identifiers
+graphpack validate-triples PACK     check relations against the ontology
 graphpack doctor                    check models and services are reachable
 ```
 
@@ -166,6 +168,37 @@ corpus:                              # rows to documents
 Every document is tagged with its pack. Extraction copies source metadata onto
 the entities it produces, which is what makes an extracted entity attributable
 in a database two packs share.
+
+`resolve.yaml` joins the two halves — what the text said, and what the index
+calls it:
+
+```yaml
+resolve:
+  - entity: PACKAGE                  # extraction label
+    target: Package                  # backbone label
+    id: "pypi:{name|mention_name}"   # the candidate identifier
+    match: "{name|mention_name}"     # what fuzzy compares, both sides
+    methods: [exact, alias, fuzzy]   # most trustworthy first; first answer wins
+    fuzzy_threshold: 93
+    on_unresolved: provisional
+```
+
+The pass writes `(:__Entity__)-[:RESOLVED_AS {method, score}]->(:Package)` and
+leaves the mention untouched, so a wrong conclusion stays reviewable. Changing a
+rule and re-resolving takes seconds; re-extracting takes hours.
+
+The **method breakdown** is the number that matters. A pack resolving 95% by
+exact match and one resolving 95% by fuzzy match have the same headline and
+completely different trustworthiness — and comparing those two distributions
+across `oss` and `tr-law` is what the generality claim rests on.
+
+## What the engine leaves undone
+
+`validate-triples` applies the ontology's `rdfs:domain` and `rdfs:range` to what
+extraction produced. The engine passes entity and relation *name lists* to the
+extractor and nothing else, so those constraints govern nothing during
+extraction: a relation can carry a declared type and still connect two things
+the ontology never meant to pair. This is the only place they are checked.
 
 ## Models
 

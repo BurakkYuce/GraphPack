@@ -52,6 +52,7 @@ def validate_pack(name: str) -> ValidationResult:
     _check_yaml_files(pack, result)
     _check_ontology(pack, result)
     _check_sources(pack, result)
+    _check_resolve(pack, result)
     return result
 
 
@@ -176,3 +177,67 @@ def _prefix(template: str) -> str:
     """Literal text before the first placeholder — the id's namespace."""
     head, _, _ = template.partition("{")
     return head
+
+
+def _check_resolve(pack: Pack, result: ValidationResult) -> None:
+    """Parse resolve.yaml and check it lines up with the ontology and backbone.
+
+    A rule naming an entity type the ontology does not declare, or a backbone
+    label no load step writes, resolves nothing and reports no error — the pass
+    simply finds no mentions to work on.
+    """
+    from graphpack.resolve.contract import ResolveError, load_rules
+
+    path = pack.path("resolve.yaml")
+    if not path.is_file():
+        return  # reported by _check_required_files when the phase demands it
+
+    try:
+        rules = load_rules(path, pack.path("aliases.csv"))
+    except ResolveError as exc:
+        result.errors.append(str(exc))
+        return
+
+    try:
+        declared = set(compile_ontology(pack.ontology_path).entities)
+    except OntologyError:
+        return  # already reported
+
+    for rule in rules.rules:
+        if rule.entity not in declared:
+            result.errors.append(
+                f"resolve.yaml: rule for '{rule.entity}', which the ontology does not declare "
+                f"(it has {', '.join(sorted(declared))})"
+            )
+
+    labels = _backbone_labels(pack)
+    if labels:
+        for rule in rules.rules:
+            if rule.target not in labels:
+                result.errors.append(
+                    f"resolve.yaml: rule for {rule.entity} resolves against '{rule.target}', "
+                    f"which no load step writes (backbone has {', '.join(sorted(labels))})"
+                )
+
+    unresolved_entities = sorted(declared - {r.entity for r in rules.rules})
+    if unresolved_entities:
+        result.warnings.append(
+            "no resolve rule for " + ", ".join(unresolved_entities) + " — mentions of those "
+            "types stay unlinked"
+        )
+
+    result.summary = (
+        f"{result.summary}; resolve: {len(rules.rules)} rule(s), {len(rules.aliases)} alias(es)"
+    )
+
+
+def _backbone_labels(pack: Pack) -> set[str]:
+    from graphpack.backbone.sources import SourcesError, load_sources
+
+    path = pack.path("sources.yaml")
+    if not path.is_file():
+        return set()
+    try:
+        return set(load_sources(path).node_labels)
+    except SourcesError:
+        return set()  # already reported

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from graphpack.inspect import ENTITY_LABEL
 from graphpack.migrations import runner as migration_runner
 from graphpack.packs import registry
 from graphpack.packs.contract import Pack
@@ -27,6 +28,18 @@ CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS
 
 _COUNT_TAGGED = "MATCH (n {pack: $pack}) RETURN count(n) AS n"
 
+# What an ingest produced, as opposed to what the backbone loaded: entity nodes
+# the extractor invented, and the text chunks they came from. Both carry the
+# pack tag, which is how they are told apart from another pack's.
+_EXTRACTED = f"MATCH (n {{pack: $pack}}) WHERE n:{ENTITY_LABEL} OR n.text IS NOT NULL"
+
+_DELETE_EXTRACTED = f"""
+{_EXTRACTED}
+CALL (n) {{ DETACH DELETE n }} IN TRANSACTIONS OF 10000 ROWS
+"""
+
+_COUNT_EXTRACTED = f"{_EXTRACTED} RETURN count(n) AS n"
+
 
 def delete_pack_nodes(session, pack_name: str) -> int:
     """Delete every node tagged with this pack. Returns how many were removed."""
@@ -36,6 +49,23 @@ def delete_pack_nodes(session, pack_name: str) -> int:
     remaining = session.run(_COUNT_TAGGED, pack=pack_name).single()["n"]
     if remaining:
         raise RuntimeError(f"{remaining} nodes for pack '{pack_name}' survived deletion")
+    return int(before)
+
+
+def delete_extracted_nodes(session, pack_name: str) -> int:
+    """Delete what extraction produced, leaving the backbone in place.
+
+    Changing an ontology means re-extracting, and re-extracting should not mean
+    re-downloading and re-loading a backbone that has not changed. The backbone
+    is also the ground truth extraction is measured against, so keeping it fixed
+    across runs is what makes two runs comparable.
+    """
+    before = session.run(_COUNT_EXTRACTED, pack=pack_name).single()["n"]
+    if before:
+        session.run(_DELETE_EXTRACTED, pack=pack_name).consume()
+    remaining = session.run(_COUNT_EXTRACTED, pack=pack_name).single()["n"]
+    if remaining:
+        raise RuntimeError(f"{remaining} extracted nodes for '{pack_name}' survived deletion")
     return int(before)
 
 
@@ -59,6 +89,24 @@ def drop_qdrant_collection(collection: str) -> bool:
         return True
     finally:
         client.close()
+
+
+def reset_extraction(session, pack: Pack, drop_vectors: bool = True) -> dict[str, object]:
+    """Undo an ingest, keeping the backbone.
+
+    The Qdrant collection goes too: its vectors are chunk embeddings, and
+    leaving them behind would let a search return text the graph no longer has.
+    """
+    deleted = delete_extracted_nodes(session, pack.name)
+    dropped = drop_qdrant_collection(pack.qdrant_collection) if drop_vectors else False
+
+    logger.info(
+        "reset extraction for pack=%s: %d nodes deleted, qdrant collection %s",
+        pack.name,
+        deleted,
+        "dropped" if dropped else "absent",
+    )
+    return {"nodes_deleted": deleted, "migrations_forgotten": 0, "qdrant_dropped": dropped}
 
 
 def reset_pack(session, pack: Pack, drop_vectors: bool = True) -> dict[str, object]:

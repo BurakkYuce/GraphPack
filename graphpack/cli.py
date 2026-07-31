@@ -279,29 +279,42 @@ def pack_reset(
     keep_vectors: bool = typer.Option(
         False, "--keep-vectors", help="Leave the Qdrant collection in place."
     ),
+    extraction_only: bool = typer.Option(
+        False,
+        "--extraction-only",
+        help="Delete only what an ingest produced; keep the backbone.",
+    ),
 ) -> None:
     """Delete a pack's nodes, registry row, migrations and vectors.
 
     Scoped to one pack: other packs in the shared database are untouched.
+    `--extraction-only` keeps the backbone, which is what you want when an
+    ontology changed and extraction has to run again — the backbone has not
+    changed, and holding it fixed is what makes two runs comparable.
     """
     from graphpack.backbone import session_scope
-    from graphpack.reset import reset_pack
+    from graphpack.reset import reset_extraction, reset_pack
 
     loaded = load_pack(pack)
+    scope = "everything extracted from documents" if extraction_only else "all graph data"
     if not yes:
         typer.confirm(
-            f"Delete all graph data for pack '{loaded.name}'"
+            f"Delete {scope} for pack '{loaded.name}'"
             + ("" if keep_vectors else f" and drop Qdrant collection '{loaded.qdrant_collection}'")
             + "?",
             abort=True,
         )
 
     with session_scope() as session:
-        outcome = reset_pack(session, loaded, drop_vectors=not keep_vectors)
+        run = reset_extraction if extraction_only else reset_pack
+        outcome = run(session, loaded, drop_vectors=not keep_vectors)
 
+    forgotten = ""
+    if not extraction_only:
+        forgotten = f"{outcome['migrations_forgotten']} migration(s) forgotten, "
     console.print(
-        f"[green]Reset {loaded.name}[/green] — {outcome['nodes_deleted']} nodes deleted, "
-        f"{outcome['migrations_forgotten']} migration(s) forgotten, "
+        f"[green]Reset {loaded.name}[/green] — {outcome['nodes_deleted']:,} nodes deleted, "
+        f"{forgotten}"
         f"qdrant collection {'dropped' if outcome['qdrant_dropped'] else 'absent'}."
     )
 
@@ -549,6 +562,101 @@ def inspect_command(
             if k != "embedding"
         }
         console.print(f"\n[dim]sample {index}:[/dim] {trimmed}")
+
+
+@app.command("resolve")
+def resolve_command(
+    pack: str = typer.Argument(..., help="Pack whose mentions to resolve."),
+    samples: int = typer.Option(15, "--samples", help="How many unresolved mentions to print."),
+) -> None:
+    """Link extracted mentions to canonical backbone identifiers.
+
+    A pass over the graph, not a step in the ingest: rules can change and be
+    re-applied in seconds without re-extracting, which takes hours.
+    """
+    from graphpack.backbone import session_scope
+    from graphpack.resolve import load_rules, resolve_pack
+
+    loaded = load_pack(pack)
+    rules = load_rules(loaded.path("resolve.yaml"), loaded.path("aliases.csv"))
+
+    with session_scope() as session:
+        report = resolve_pack(session, loaded.name, rules, sample_unresolved=samples)
+
+    if not report.total:
+        console.print("[yellow]No mentions to resolve.[/yellow]")
+        console.print(f"[dim]Run `graphpack ingest {loaded.name}` first.[/dim]")
+        return
+
+    table = Table("method", "mentions", "share")
+    for method, count in report.methods.most_common():
+        table.add_row(method, f"{count:,}", f"{count / report.total:.1%}")
+    console.print(table)
+
+    if report.by_entity:
+        table = Table("entity", *sorted({m for c in report.by_entity.values() for m in c}))
+        methods = sorted({m for c in report.by_entity.values() for m in c})
+        for entity, counts in sorted(report.by_entity.items()):
+            table.add_row(entity, *(f"{counts.get(m, 0):,}" for m in methods))
+        console.print(table)
+
+    console.print(
+        f"\n[green]{report.resolved:,} of {report.total:,} mentions "
+        f"({report.accounted_for:.1%}) reached a canonical identifier.[/green]"
+    )
+
+    if report.unresolved_samples:
+        console.print("\n[bold]Unresolved — candidates for aliases.csv[/bold]")
+        for entity, text in report.unresolved_samples:
+            console.print(f"  {entity:<12} {text}")
+
+
+@app.command("validate-triples")
+def validate_triples_command(
+    pack: str = typer.Argument(..., help="Pack whose ontology to check extraction against."),
+    samples: int = typer.Option(10, "--samples", help="How many violations to print."),
+) -> None:
+    """Check extracted relations against the ontology's domain and range.
+
+    The engine never passes triple constraints to the extractor — only entity
+    and relation name lists reach it — so an ontology's rdfs:domain and
+    rdfs:range constrain nothing during extraction. This applies them
+    afterwards, which is the only place they are applied at all.
+    """
+    from graphpack.backbone import session_scope
+    from graphpack.resolve.triples import validate_triples
+
+    loaded = load_pack(pack)
+    schema = compile_ontology(loaded.ontology_path)
+
+    with session_scope() as session:
+        report = validate_triples(session, loaded.name, schema.triple_constraints)
+
+    if not report.total:
+        console.print("[yellow]No relations between extracted entities.[/yellow]")
+        return
+
+    table = Table("verdict", "relations", "share")
+    for verdict, count in (
+        ("conforming", report.conforming),
+        ("wrong types", report.violating),
+        ("undeclared relation", report.undeclared),
+    ):
+        table.add_row(verdict, f"{count:,}", f"{count / report.total:.1%}")
+    console.print(table)
+
+    if report.violations:
+        console.print("\n[bold]Triples the ontology forbids[/bold]")
+        for violation in report.violations[:samples]:
+            console.print(
+                f"  {violation.subject_type} -[{violation.relation}]-> {violation.object_type}"
+                f"   [dim]expected {violation.expected or 'nothing'}[/dim]"
+            )
+        console.print(
+            f"\n[dim]{report.violating:,} relations use a declared relation type between "
+            "types the ontology does not pair. The engine does not enforce this; "
+            "nothing else would have caught it.[/dim]"
+        )
 
 
 def main() -> None:

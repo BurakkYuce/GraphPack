@@ -2,5 +2,7 @@
 # so published node and edge counts can be traced to specific inputs.
 #
 # rows  sha256                                                            file
+  3413  b289970e7045865a6da29f24e4ad6f39a8b09c5b9922e2f6b25288b79d51a519  issues.jsonl
   1000  c85bd3387b511161c6a15b74f1e540b41f20218856642e96899334a487a0cb90  packages.jsonl
+   120  137a19b69e081280aa28b7f4ee8f563d664d8f5ec70bbeff8d3b4d43ebde615a  repos.jsonl
   1000  930da3c33aed844b89e711d5255fb721d61e9efdf2e0c2a68cd1e1768a75d739  top-packages.jsonl

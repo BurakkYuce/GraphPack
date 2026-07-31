@@ -136,6 +136,50 @@ def test_limit_stops_early(corpus):
     assert len(build_documents("oss", sources, data, limit=1)) == 1
 
 
+def test_limit_takes_the_first_documents_not_a_sample(corpus):
+    """Recorded because it is the trap: file order groups documents by whatever
+    the fetch iterated over, so a --limit slice of the oss corpus came from 8
+    repositories out of 114."""
+    rows = [{"repo": f"org/repo{i}", "number": 1, "title": f"t{i}", "body": "b"} for i in range(10)]
+    sources, data = corpus(rows=rows)
+
+    taken = build_documents("oss", sources, data, limit=3)
+
+    assert [d.metadata["repo"] for d in taken] == ["org/repo0", "org/repo1", "org/repo2"]
+
+
+def test_sample_spreads_across_the_corpus(corpus):
+    rows = [{"repo": f"org/repo{i}", "number": 1, "title": f"t{i}", "body": "b"} for i in range(20)]
+    sources, data = corpus(rows=rows)
+
+    sampled = build_documents("oss", sources, data, sample=5, seed=0)
+
+    assert len(sampled) == 5
+    # A sample of 5 from 20 that happened to be the first 5 would be a
+    # one-in-fifteen-thousand coincidence, not a sample.
+    assert [d.metadata["repo"] for d in sampled] != [f"org/repo{i}" for i in range(5)]
+
+
+def test_the_same_seed_selects_the_same_documents(corpus):
+    """Extraction is expensive enough that runs are rarely repeated. What was
+    measured on one subset has to be reproducible on that subset."""
+    rows = [{"repo": f"org/repo{i}", "number": 1, "title": f"t{i}", "body": "b"} for i in range(20)]
+    sources, data = corpus(rows=rows)
+
+    first = [d.doc_id for d in build_documents("oss", sources, data, sample=5, seed=7)]
+    again = [d.doc_id for d in build_documents("oss", sources, data, sample=5, seed=7)]
+    other = [d.doc_id for d in build_documents("oss", sources, data, sample=5, seed=8)]
+
+    assert first == again
+    assert first != other
+
+
+def test_sampling_more_than_the_corpus_holds_returns_everything(corpus):
+    sources, data = corpus()
+
+    assert len(build_documents("oss", sources, data, sample=1000)) == len(ROWS)
+
+
 def test_a_missing_data_file_says_what_to_run(corpus, tmp_path):
     sources, _ = corpus()
 

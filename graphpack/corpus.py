@@ -39,15 +39,27 @@ def build_documents(
     sources: Sources,
     data_dir: Path,
     limit: int | None = None,
+    sample: int | None = None,
+    seed: int = 0,
 ) -> list:
-    """Build the pack's documents, in declaration order.
+    """Build the pack's documents.
 
     Returns LlamaIndex ``Document`` objects, ready for
     ``HybridSearchSystem._ingest_source_documents``.
+
+    ``limit`` takes the first N in file order. That order is not arbitrary and
+    it is not random: records arrive grouped by whatever the fetch iterated
+    over, so the first 200 documents of this corpus come from eight
+    repositories out of a hundred and fourteen. Useful for a smoke test,
+    useless as a measurement.
+
+    ``sample`` takes N at random, seeded so the same call selects the same
+    documents. Extraction is expensive enough that a run is rarely repeated;
+    what is measured on one subset should be reproducible on the same subset.
     """
     from llama_index.core import Document  # engine dependency
 
-    documents = []
+    records: list[dict[str, Any]] = []
     for spec in sources.corpus:
         source_path = data_dir / spec.source
         if not source_path.exists():
@@ -56,17 +68,20 @@ def build_documents(
                 f"{pack_name}` first"
             )
         for record in _records(pack_name, spec, sources, source_path):
-            documents.append(
-                Document(
-                    text=record["text"],
-                    doc_id=record["id"],
-                    metadata=record["metadata"],
-                )
-            )
-            if limit is not None and len(documents) >= limit:
+            records.append(record)
+            if sample is None and limit is not None and len(records) >= limit:
                 logger.info("Stopping at the requested limit of %d documents", limit)
-                return documents
+                break
 
+    if sample is not None and sample < len(records):
+        import random
+
+        chosen = random.Random(seed).sample(range(len(records)), sample)
+        # Keep file order among the chosen so a run reads the same way twice.
+        records = [records[i] for i in sorted(chosen)]
+        logger.info("Sampled %d document(s) with seed %d", len(records), seed)
+
+    documents = [Document(text=r["text"], doc_id=r["id"], metadata=r["metadata"]) for r in records]
     logger.info("Built %d document(s) for pack '%s'", len(documents), pack_name)
     return documents
 

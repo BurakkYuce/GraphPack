@@ -440,8 +440,12 @@ def backbone_check(
 def ingest_command(
     pack: str = typer.Argument(..., help="Pack whose corpus to ingest."),
     limit: int | None = typer.Option(
-        None, "--limit", "-n", help="Ingest only the first N documents."
+        None, "--limit", "-n", help="Ingest the first N documents in file order."
     ),
+    sample: int | None = typer.Option(
+        None, "--sample", help="Ingest N documents chosen at random, reproducibly."
+    ),
+    seed: int = typer.Option(0, "--seed", help="Seed for --sample."),
     skip_graph: bool = typer.Option(
         False,
         "--skip-graph",
@@ -451,12 +455,20 @@ def ingest_command(
     """Run the pack's documents through the engine.
 
     Extraction calls the LLM once per chunk, so a full pack takes hours on a
-    local model. Use --limit while the ontology is still being tuned.
+    local model.
+
+    Use --sample, not --limit, for anything that will be measured. File order
+    follows whatever the fetch iterated over: the first 200 documents of the oss
+    corpus come from 8 repositories out of 114, which is a fine smoke test and a
+    misleading measurement.
     """
     from graphpack.doctor import run_checks
     from graphpack.ingest import ingest_pack
 
     loaded = load_pack(pack)
+    if limit and sample:
+        err_console.print("[red]error[/red] --limit and --sample select differently; pick one.")
+        raise typer.Exit(code=1)
 
     blocking = [c for c in run_checks() if not c.ok]
     if blocking:
@@ -467,7 +479,7 @@ def ingest_command(
         err_console.print("\nRun `graphpack doctor` for the full report.")
         raise typer.Exit(code=1)
 
-    report = ingest_pack(loaded, limit=limit, skip_graph=skip_graph)
+    report = ingest_pack(loaded, limit=limit, sample=sample, seed=seed, skip_graph=skip_graph)
     console.print(
         f"[green]Ingested {report.documents:,} document(s)[/green] in {report.seconds:.1f}s — "
         f"{report.entities_added:,} extracted entities added "

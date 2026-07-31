@@ -39,7 +39,13 @@ class IngestReport:
         return self.entities_after - self.entities_before
 
 
-def ingest_pack(pack: Pack, limit: int | None = None, skip_graph: bool = False) -> IngestReport:
+def ingest_pack(
+    pack: Pack,
+    limit: int | None = None,
+    sample: int | None = None,
+    seed: int = 0,
+    skip_graph: bool = False,
+) -> IngestReport:
     """Ingest *pack*'s corpus.
 
     ``skip_graph`` runs everything except extraction, which is the cheap way to
@@ -53,7 +59,9 @@ def ingest_pack(pack: Pack, limit: int | None = None, skip_graph: bool = False) 
     if not sources.corpus:
         raise IngestError(f"{pack.name} declares no corpus steps")
 
-    documents = build_documents(pack.name, sources, pack.data_dir, limit=limit)
+    documents = build_documents(
+        pack.name, sources, pack.data_dir, limit=limit, sample=sample, seed=seed
+    )
     if not documents:
         raise IngestError(
             f"{pack.name}: no documents — run `graphpack backbone fetch {pack.name}` first"

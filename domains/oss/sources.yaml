@@ -1,0 +1,145 @@
+# Structured backbone for the Python packaging ecosystem.
+#
+# No LLM is involved here. Package identity and dependency edges are facts
+# published by the index, so they are loaded deterministically and become the
+# ground truth that phase 4 evaluates extraction against.
+#
+# Sources are the public PyPI JSON API and a download-ranked package list. The
+# plan's first choice was the deps.dev BigQuery dataset; that was dropped
+# because it needs a billed Google Cloud project, and this path costs nothing,
+# needs no credentials, and can be re-run by anyone reading this file.
+
+normalize:
+  # PEP 503: lowercase, then collapse runs of -, _ and . into a single -.
+  # Spelled out rather than named after the specification, so the operations
+  # stay generic and the rule stays visible.
+  pypi_name:
+    - strip
+    - lower
+    - {regex_replace: {pattern: "[-_.]+", replace: "-"}}
+
+  # A dependency is published as a PEP 508 requirement string, e.g.
+  #   'charset-normalizer<4,>=2; python_version >= "3.8"'
+  # The distribution name is everything up to the first version specifier,
+  # extras bracket, marker semicolon or space.
+  requirement_name:
+    - strip
+    - {regex_extract: {pattern: "^([A-Za-z0-9][A-Za-z0-9._-]*)"}}
+    - lower
+    - {regex_replace: {pattern: "[-_.]+", replace: "-"}}
+
+  # Repository URLs arrive with assorted decoration: a trailing slash, a .git
+  # suffix, a tree/branch path. Reduce to owner/repo so the same repository
+  # reached by two routes becomes one node.
+  repo_slug:
+    - strip
+    - lower
+    - {regex_extract: {pattern: "github\\.com[:/]+([^/]+/[^/#?]+)"}}
+    - {regex_replace: {pattern: "\\.git$", replace: ""}}
+
+fetch:
+  # Download-ranked package list, refreshed monthly from the public PyPI
+  # download statistics. Only the ranking comes from here; every fact about a
+  # package comes from the index itself.
+  - id: top-packages
+    url: https://raw.githubusercontent.com/hugovk/top-pypi-packages/main/top-pypi-packages.min.json
+    select: rows
+    limit: 1000
+    out: top-packages.jsonl
+
+  # One request per package. `keep` trims each response — they run to megabytes
+  # because they enumerate every file of every release, and none of that is
+  # needed here.
+  - id: packages
+    url: "https://pypi.org/pypi/{project}/json"
+    for_each: top-packages.jsonl
+    out: packages.jsonl
+    concurrency: 8
+    on_error: skip          # a name in the ranking can be yanked or renamed
+    keep:
+      name: info.name
+      version: info.version
+      summary: info.summary
+      license: info.license
+      requires_dist: info.requires_dist
+      home_page: info.home_page
+      # The whole map, not named keys. Publishers file the repository under
+      # "Source", "source", "Source Code", "Repository", "Homepage", "Home",
+      # "Code" and more; enumerating them is a game you lose slowly.
+      project_urls: info.project_urls
+
+load:
+  - source: packages.jsonl
+    node:
+      label: Package
+      id: "pypi:{name|pypi_name}"
+      properties:
+        name: "{name}"
+        latest_version: "{version}"
+        summary: "{summary}"
+        license: "{license}"
+
+  - source: packages.jsonl
+    node:
+      label: Release
+      id: "pypi:{name|pypi_name}@{version}"
+      properties:
+        version: "{version}"
+
+  - source: packages.jsonl
+    edge:
+      type: HAS_RELEASE
+      from: "pypi:{name|pypi_name}"
+      to: "pypi:{name|pypi_name}@{version}"
+
+  # Repositories, found by looking at every project URL rather than at chosen
+  # key names. A package usually lists several — issues, changelog, source —
+  # and repo_slug reduces all of them to the same owner/repo, so MERGE collapses
+  # them into one node. URLs that are not GitHub render empty and are skipped.
+  - source: packages.jsonl
+    explode: project_urls
+    node:
+      label: Repository
+      id: "gh:{value|repo_slug}"
+      properties:
+        slug: "{value|repo_slug}"
+
+  - source: packages.jsonl
+    explode: project_urls
+    edge:
+      type: HOSTED_IN
+      from: "pypi:{name|pypi_name}"
+      to: "gh:{value|repo_slug}"
+
+  # Packages that set no project URLs at all still often name the repository as
+  # their homepage.
+  - source: packages.jsonl
+    node:
+      label: Repository
+      id: "gh:{home_page|repo_slug}"
+      properties:
+        slug: "{home_page|repo_slug}"
+
+  - source: packages.jsonl
+    edge:
+      type: HOSTED_IN
+      from: "pypi:{name|pypi_name}"
+      to: "gh:{home_page|repo_slug}"
+
+  # Dependency edges. `explode` yields one row per requirement string, exposed
+  # to templates as {value}.
+  #
+  # Requirements carrying an `extra ==` marker are only installed when someone
+  # asks for that extra, so they are excluded: the question this backbone has to
+  # answer is "if this package broke, what actually breaks with it", and an
+  # optional extra does not.
+  - source: packages.jsonl
+    explode: requires_dist
+    where:
+      value: {not_matches: "extra\\s*=="}
+    edge:
+      type: DEPENDS_ON
+      from: "pypi:{name|pypi_name}"
+      to: "pypi:{value|requirement_name}"
+      properties:
+        requirement: "{value}"

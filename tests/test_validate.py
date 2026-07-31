@@ -25,8 +25,21 @@ def test_valid_pack_passes_with_notes_for_later_phases(domains):
 
     assert result.ok, result.errors
     assert "2 entity types" in result.summary
+    assert "backbone: 1 fetch, 1 load" in result.summary
     # Files belonging to phases that have not landed are notes, not failures.
-    assert any("sources.yaml" in w for w in result.warnings)
+    assert any("resolve.yaml" in w for w in result.warnings)
+
+
+def test_a_file_required_by_an_implemented_phase_is_an_error(domains):
+    """The distinction the warnings above rest on: once a phase ships, its
+    artifacts stop being optional and a half-built pack fails loudly."""
+    root = domains("widgets")
+    (root / "sources.yaml").unlink()
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("sources.yaml missing" in e for e in result.errors)
 
 
 def test_relation_without_range_is_an_error(domains):

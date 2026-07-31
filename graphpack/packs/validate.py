@@ -51,6 +51,7 @@ def validate_pack(name: str) -> ValidationResult:
     _check_required_files(pack, result)
     _check_yaml_files(pack, result)
     _check_ontology(pack, result)
+    _check_sources(pack, result)
     return result
 
 
@@ -129,3 +130,49 @@ def _check_ontology(pack: Pack, result: ValidationResult) -> None:
             f"{len(schema.triple_constraints)} triple constraints exceed the "
             f"{MAX_TRIPLE_CONSTRAINTS} limit — usually a relation missing rdfs:range"
         )
+
+
+def _check_sources(pack: Pack, result: ValidationResult) -> None:
+    """Parse sources.yaml so an undefined normaliser or an unreadable input is
+    reported here rather than as a load that silently writes nothing."""
+    from graphpack.backbone.sources import SourcesError, load_sources
+
+    path = pack.path("sources.yaml")
+    if not path.is_file():
+        return  # reported by _check_required_files when the phase demands it
+
+    try:
+        sources = load_sources(path)
+    except SourcesError as exc:
+        result.errors.append(str(exc))
+        return
+
+    if not sources.load:
+        result.warnings.append("sources.yaml declares no load steps")
+        return
+
+    labels = sources.node_labels
+    result.summary = (
+        f"{result.summary}; backbone: {len(sources.fetch)} fetch, "
+        f"{len(sources.load)} load, labels {', '.join(labels)}"
+    ).lstrip("; ")
+
+    # Every edge endpoint should be an id shape some node step also produces.
+    # A mismatched prefix loads zero edges and looks exactly like missing data.
+    node_prefixes = {_prefix(spec.node.id) for spec in sources.load if spec.node}
+    for spec in sources.load:
+        if not spec.edge:
+            continue
+        for role, template in (("from", spec.edge.start), ("to", spec.edge.end)):
+            prefix = _prefix(template)
+            if prefix and prefix not in node_prefixes:
+                result.warnings.append(
+                    f"edge {spec.edge.type}.{role} builds ids as '{prefix}…' but no node step "
+                    f"produces that prefix ({', '.join(sorted(p for p in node_prefixes if p))})"
+                )
+
+
+def _prefix(template: str) -> str:
+    """Literal text before the first placeholder — the id's namespace."""
+    head, _, _ = template.partition("{")
+    return head

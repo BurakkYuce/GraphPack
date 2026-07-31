@@ -1,0 +1,6 @@
+# Fetched payloads are gitignored. This records what a run produced,
+# so published node and edge counts can be traced to specific inputs.
+#
+# rows  sha256                                                            file
+  1000  c85bd3387b511161c6a15b74f1e540b41f20218856642e96899334a487a0cb90  packages.jsonl
+  1000  930da3c33aed844b89e711d5255fb721d61e9efdf2e0c2a68cd1e1768a75d739  top-packages.jsonl

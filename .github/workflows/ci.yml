@@ -91,7 +91,8 @@ jobs:
           # on the phrase "no pending migrations".
           uv run graphpack migrate --check
 
-      # 5. Integration tests against the live Neo4j.
+      # 5. Integration tests against the live Neo4j. Covers the loader's
+      #    idempotency and pack isolation against a real database.
       - name: Integration tests
         working-directory: graphpack
         run: uv run pytest -m "integration and not vector"

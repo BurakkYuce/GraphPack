@@ -50,6 +50,28 @@ MINIMAL_PACK_YAML = textwrap.dedent(
     """
 )
 
+MINIMAL_SOURCES = textwrap.dedent(
+    """\
+    normalize:
+      slug:
+        - lower
+        - {regex_replace: {pattern: "[-_.]+", replace: "-"}}
+
+    fetch:
+      - id: widgets
+        url: https://example.invalid/widgets.json
+        out: widgets.jsonl
+
+    load:
+      - source: widgets.jsonl
+        node:
+          label: Widget
+          id: "w:{name|slug}"
+          properties:
+            name: "{name}"
+    """
+)
+
 
 @pytest.fixture
 def pack_dir(tmp_path: Path):
@@ -58,17 +80,25 @@ def pack_dir(tmp_path: Path):
     domains = tmp_path / "domains"
     domains.mkdir()
 
-    def _make(name: str = "widgets", *, pack_yaml: str | None = None, ontology: str | None = None):
+    def _make(
+        name: str = "widgets",
+        *,
+        pack_yaml: str | None = None,
+        ontology: str | None = None,
+        sources: str | None = None,
+    ):
         root = domains / name
         root.mkdir(parents=True, exist_ok=True)
         (root / "pack.yaml").write_text(
             pack_yaml if pack_yaml is not None else MINIMAL_PACK_YAML.format(name=name),
             encoding="utf-8",
         )
-        if ontology is not None:
-            (root / "ontology.ttl").write_text(ontology, encoding="utf-8")
-        else:
-            (root / "ontology.ttl").write_text(MINIMAL_ONTOLOGY, encoding="utf-8")
+        (root / "ontology.ttl").write_text(
+            MINIMAL_ONTOLOGY if ontology is None else ontology, encoding="utf-8"
+        )
+        (root / "sources.yaml").write_text(
+            MINIMAL_SOURCES if sources is None else sources, encoding="utf-8"
+        )
         return root
 
     _make.domains = domains  # type: ignore[attr-defined]

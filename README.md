@@ -13,8 +13,9 @@ measured with precision/recall/F1 in two domains that share almost nothing.*
 and `tr-law` (Turkish case law: backbone built from citations, fuzzy resolution,
 Turkish).
 
-**Status:** phase 0 complete — pack contract, ontology compiler, migration
-runner, CLI, CI. Phase 1 (structured backbone) next.
+**Status:** phase 1 complete. The `oss` backbone is live: 1,000 packages, 2,437
+dependency edges, built from configuration alone and reproducible by command.
+Phase 2 (corpus ingest and ontology-guided extraction) next.
 
 ## Quickstart
 
@@ -35,6 +36,11 @@ uv pip install -e ".[dev]"
 docker compose -f infra/compose.yaml up -d
 uv run graphpack migrate
 uv run graphpack packs validate
+
+# Build the oss backbone: ~3 minutes of downloads, no credentials, no cost.
+uv run graphpack backbone fetch oss
+uv run graphpack backbone load oss
+uv run graphpack backbone check oss
 ```
 
 Always run from the repository root: the engine reads `.env` relative to the
@@ -51,6 +57,9 @@ graphpack migrate [--dry-run]       apply pending migrations
 graphpack migrate status            applied vs pending
 graphpack pack register PACK        record version + ontology checksum
 graphpack pack reset PACK           delete one pack's data, leave others alone
+graphpack backbone fetch PACK       download the pack's structured sources
+graphpack backbone load PACK        merge them into Neo4j (idempotent)
+graphpack backbone check PACK       run the pack's sanity queries
 ```
 
 `graphpack packs schema oss` shows what the engine will actually extract with:
@@ -102,11 +111,36 @@ so a pack called `oss` does not trip on "cross" or "across".
 domains/<name>/
   pack.yaml         identity, extraction knobs, store targets   (required)
   ontology.ttl      OWL classes and object properties           (required)
-  sources.yaml      structured sources → backbone               (phase 1)
+  sources.yaml      structured sources → backbone               (required)
+  checks.cypher     sanity queries, some of them assertions
   resolve.yaml      mention → canonical id rules                (phase 3)
   eval.yaml         gold generator selection                    (phase 4)
   retrieval.yaml    intent → Cypher template                    (phase 6)
 ```
+
+`sources.yaml` says where records come from and what they become:
+
+```yaml
+normalize:
+  slug: [lower, {regex_replace: {pattern: "[-_.]+", replace: "-"}}]
+
+fetch:
+  - id: packages
+    url: "https://pypi.org/pypi/{project}/json"
+    for_each: top-packages.jsonl     # one request per row
+    keep: {name: info.name, requires_dist: info.requires_dist}
+
+load:
+  - source: packages.jsonl
+    node: {label: Package, id: "pypi:{name|slug}"}
+  - source: packages.jsonl
+    explode: requires_dist           # one row per list element, as {value}
+    edge: {type: DEPENDS_ON, from: "pypi:{name|slug}", to: "pypi:{value|slug}"}
+```
+
+Ids are templates, so the identifier scheme is a pack decision. `{a,b|slug}`
+takes the first field that survives normalising. Uniqueness constraints are
+derived from the labels a pack declares — no pack ships a migration.
 
 The ontology is read by the engine's OWL parser, which has opinions:
 

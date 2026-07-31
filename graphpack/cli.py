@@ -33,8 +33,12 @@ app = typer.Typer(
 )
 packs_app = typer.Typer(help="Inspect and validate packs.", no_args_is_help=True)
 pack_app = typer.Typer(help="Operate on a single pack.", no_args_is_help=True)
+backbone_app = typer.Typer(
+    help="Structured data into the graph — no LLM involved.", no_args_is_help=True
+)
 app.add_typer(packs_app, name="packs")
 app.add_typer(pack_app, name="pack")
+app.add_typer(backbone_app, name="backbone")
 
 console = Console()
 err_console = Console(stderr=True)
@@ -278,6 +282,103 @@ def pack_register(pack: str = typer.Argument(..., help="Pack to record in the gr
     console.print(f"[green]Registered[/green] {loaded.name} v{loaded.version}")
 
 
+# ----------------------------------------------------------------------
+# backbone
+# ----------------------------------------------------------------------
+
+
+@backbone_app.command("fetch")
+def backbone_fetch(
+    pack: str = typer.Argument(..., help="Pack whose sources to acquire."),
+    force: bool = typer.Option(False, "--force", help="Refetch files that already exist."),
+) -> None:
+    """Download the pack's raw records into domains/<pack>/data/.
+
+    Acquisition is the slow, externally-visible part of the pipeline, so an
+    existing file is left alone unless --force says otherwise.
+    """
+    from graphpack.backbone import fetch_all, load_sources
+
+    loaded = load_pack(pack)
+    sources = load_sources(loaded.path("sources.yaml"))
+    if not sources.fetch:
+        console.print(f"[yellow]{loaded.name} declares no fetch steps.[/yellow]")
+        return
+
+    results = fetch_all(sources, loaded.data_dir, force=force)
+    for result in results:
+        console.print(f"  {result}")
+    console.print(f"[green]Fetched {len(results)} source(s)[/green] into {loaded.data_dir}")
+
+
+@backbone_app.command("load")
+def backbone_load(
+    pack: str = typer.Argument(..., help="Pack to load into the graph."),
+) -> None:
+    """Merge the pack's structured records into Neo4j.
+
+    Idempotent: a second run writes the same rows and creates nothing.
+    """
+    from graphpack.backbone import load_backbone, load_sources, session_scope
+    from graphpack.packs import registry
+
+    loaded = load_pack(pack)
+    sources = load_sources(loaded.path("sources.yaml"))
+
+    with session_scope() as session:
+        report = load_backbone(session, loaded.name, sources, loaded.data_dir)
+        registry.register(session, loaded)
+
+    for line in report.lines():
+        console.print(f"  {line}")
+    console.print(
+        f"[green]Loaded {report.total_written:,} rows[/green] for {loaded.name} "
+        f"({report.total_created:,} new)"
+    )
+
+
+@backbone_app.command("check")
+def backbone_check(
+    pack: str = typer.Argument(..., help="Pack whose sanity queries to run."),
+) -> None:
+    """Run the pack's checks.cypher.
+
+    Queries titled '[must be empty]' are assertions; anything they return fails
+    the command. The rest are printed to be read.
+    """
+    from graphpack.backbone import session_scope
+    from graphpack.backbone.checks import run_checks
+
+    loaded = load_pack(pack)
+    with session_scope() as session:
+        results = run_checks(session, loaded.path("checks.cypher"))
+
+    failed = 0
+    for result in results:
+        if result.failed:
+            failed += 1
+            console.print(f"[red]FAIL[/red] {result.check.title} — expected no rows")
+        elif result.check.must_be_empty:
+            console.print(f"[green]OK[/green]   {result.check.title}")
+            continue
+        else:
+            console.print(f"\n[bold]{result.check.title}[/bold]")
+
+        if not result.rows:
+            console.print("  [dim](no rows)[/dim]")
+            continue
+        table = Table(*result.rows[0].keys())
+        for row in result.rows[:25]:
+            table.add_row(*("" if v is None else str(v) for v in row.values()))
+        console.print(table)
+        if len(result.rows) > 25:
+            console.print(f"  [dim]… and {len(result.rows) - 25} more rows[/dim]")
+
+    if failed:
+        console.print(f"\n[red]{failed} assertion(s) failed.[/red]")
+        raise typer.Exit(code=1)
+
+
 def main() -> None:
     """Turn the expected failures into one-line messages.
 
@@ -285,11 +386,23 @@ def main() -> None:
     outcomes of running a command, not defects — a traceback for those buries
     the sentence that says what to do.
     """
+    from graphpack.backbone import FetchError, LoadError, SourcesError
+    from graphpack.backbone.checks import CheckError
+    from graphpack.backbone.normalize import NormalizeError
     from graphpack.migrations import MigrationError
 
     try:
         app()
-    except (PackError, OntologyError, MigrationError) as exc:
+    except (
+        CheckError,
+        FetchError,
+        LoadError,
+        MigrationError,
+        NormalizeError,
+        OntologyError,
+        PackError,
+        SourcesError,
+    ) as exc:
         err_console.print(f"[red]error[/red] {exc}")
         raise SystemExit(1) from exc
     except ConnectionError as exc:

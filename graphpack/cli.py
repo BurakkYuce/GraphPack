@@ -159,8 +159,17 @@ migrate_app = typer.Typer(help="Apply and inspect migrations.", invoke_without_c
 def migrate(
     ctx: typer.Context,
     dry_run: bool = typer.Option(False, "--dry-run", help="List pending migrations only."),
+    check: bool = typer.Option(
+        False,
+        "--check",
+        help="Apply nothing; exit non-zero if any migration is pending.",
+    ),
 ) -> None:
-    """Apply every pending migration in order."""
+    """Apply every pending migration in order.
+
+    ``--check`` exists so CI can assert "nothing pending" through an exit code
+    rather than by matching words in this output.
+    """
     if ctx.invoked_subcommand is not None:
         return
 
@@ -168,11 +177,18 @@ def migrate(
     from graphpack.migrations import apply_pending
 
     with session_scope() as session:
-        applied = apply_pending(session, dry_run=dry_run)
+        applied = apply_pending(session, dry_run=dry_run or check)
 
     if not applied:
         console.print("[green]Up to date[/green] — no pending migrations.")
-    elif dry_run:
+        return
+
+    if check:
+        console.print(f"[red]{len(applied)} migration(s) pending:[/red]")
+        for migration in applied:
+            console.print(f"  {migration.id}")
+        raise typer.Exit(code=1)
+    if dry_run:
         console.print(f"[yellow]{len(applied)} pending:[/yellow]")
         for migration in applied:
             console.print(f"  {migration.id}")

@@ -86,7 +86,10 @@ jobs:
         run: |
           uv run graphpack migrate
           uv run graphpack migrate status
-          test -z "$(uv run graphpack migrate --dry-run | grep -o '[0-9]* pending' || true)"
+          # Applying twice must leave nothing to do. --check reports that through
+          # an exit code; matching words in the output is how you end up asserting
+          # on the phrase "no pending migrations".
+          uv run graphpack migrate --check
 
       # 5. Integration tests against the live Neo4j.
       - name: Integration tests

@@ -16,7 +16,8 @@ authors = [{ name = "Burak Yuce" }]
 #
 #   uv pip install -e ../flexible-graphrag/flexible-graphrag
 #
-# Engine commit pinned for reproducibility: 71ce503
+# Engine commit pinned for reproducibility:
+#   71ce503837475c02cfcfb80cd882e3721fcbe1bc
 # (stevereiner/flexible-graphrag). The engine repository must stay byte-identical
 # to upstream — `git -C ../flexible-graphrag status --porcelain` must be empty.
 # See docs/ENGINE.md.

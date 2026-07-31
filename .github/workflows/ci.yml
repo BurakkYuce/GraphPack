@@ -8,9 +8,11 @@ on:
 
 # The engine is a sibling checkout, pinned so a result today can be reproduced
 # next month. Bumping this is a deliberate act: re-run the measurements after.
+# Must be the full 40-character SHA — actions/checkout resolves a short one as a
+# branch or tag pattern and finds nothing.
 env:
   ENGINE_REPO: stevereiner/flexible-graphrag
-  ENGINE_REF: 71ce503
+  ENGINE_REF: 71ce503837475c02cfcfb80cd882e3721fcbe1bc
 
 jobs:
   test:
@@ -35,12 +37,12 @@ jobs:
 
     steps:
       - name: Check out GraphPack
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: graphpack
 
       - name: Check out the engine at the pinned commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ env.ENGINE_REPO }}
           ref: ${{ env.ENGINE_REF }}

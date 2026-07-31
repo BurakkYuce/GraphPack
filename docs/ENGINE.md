@@ -1,7 +1,8 @@
 # Working against the engine
 
 GraphPack builds on [`stevereiner/flexible-graphrag`](https://github.com/stevereiner/flexible-graphrag),
-pinned at commit **`71ce503`**. The engine repository is a read-only sibling
+pinned at commit **`71ce503837475c02cfcfb80cd882e3721fcbe1bc`**. The engine
+repository is a read-only sibling
 checkout. Nothing in GraphPack writes to it, and CI fails if anything does.
 
 ```

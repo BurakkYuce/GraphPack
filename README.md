@@ -24,9 +24,9 @@ Requires Python 3.12+, [uv](https://docs.astral.sh/uv/) and Docker.
 git clone https://github.com/BurakkYuce/GraphPack.git
 cd GraphPack
 
-# The engine is a sibling checkout, pinned to 71ce503.
+# The engine is a sibling checkout, pinned so results stay reproducible.
 git clone https://github.com/stevereiner/flexible-graphrag.git ../flexible-graphrag
-git -C ../flexible-graphrag checkout 71ce503
+git -C ../flexible-graphrag checkout 71ce503837475c02cfcfb80cd882e3721fcbe1bc
 
 uv venv --python 3.12
 uv pip install -e ../flexible-graphrag/flexible-graphrag

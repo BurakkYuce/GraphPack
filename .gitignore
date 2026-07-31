@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# Never commit an .env here: the engine's Settings reads .env relative to cwd
+# and {TYPE}_VECTOR_DB_CONFIG-style vars silently override programmatic config.
+.env
+.env.*
+!.env.sample
+
+# Pack payloads are downloaded, not committed. Checksums live in MANIFEST.txt.
+domains/*/data/*
+!domains/*/data/MANIFEST.txt
+!domains/*/data/.gitkeep
+
+# Neo4j dumps taken before each phase
+snapshots/

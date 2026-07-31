@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "graphpack"
+version = "0.1.0"
+description = "Declarative domain packs, agentic multi-hop retrieval and self-labeling evaluation on top of the flexible-graphrag engine"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.15"
+authors = [{ name = "Burak Yuce" }]
+
+# The flexible-graphrag engine is NOT listed here on purpose.
+# It is installed as an editable sibling checkout, pinned to a known commit:
+#
+#   uv pip install -e ../flexible-graphrag/flexible-graphrag
+#
+# Engine commit pinned for reproducibility: 71ce503
+# (stevereiner/flexible-graphrag). The engine repository must stay byte-identical
+# to upstream — `git -C ../flexible-graphrag status --porcelain` must be empty.
+# See docs/ENGINE.md.
+dependencies = [
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "rich>=13.0",
+    # neo4j, rdflib, rapidfuzz, qdrant-client all arrive via the engine.
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+graphpack = "graphpack.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+# ONLY the graphpack package. The engine installs flat top-level modules
+# (config, main, backend, hybrid_system, ingest, process, sources, rdf, ...);
+# anything we expose at top level would shadow and break it.
+include = ["graphpack*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = ["-v", "--tb=short", "--strict-markers", "-rf"]
+markers = [
+    "unit: pure-Python tests, no external services",
+    "integration: requires a live Neo4j / Qdrant (docker compose up)",
+    "graph: requires a running Neo4j",
+    "vector: requires a running Qdrant",
+    "slow: long wall-clock tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

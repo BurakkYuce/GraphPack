@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# The engine is a sibling checkout, pinned so a result today can be reproduced
+# next month. Bumping this is a deliberate act: re-run the measurements after.
+env:
+  ENGINE_REPO: stevereiner/flexible-graphrag
+  ENGINE_REF: 71ce503
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      neo4j:
+        # Community edition, matching infra/compose.yaml — one database, packs
+        # separated by a `pack` property.
+        image: neo4j:5.26.0
+        env:
+          NEO4J_AUTH: neo4j/password
+        ports:
+          - 7687:7687
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p password 'RETURN 1' || exit 1"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 20
+          --health-start-period 40s
+
+    steps:
+      - name: Check out GraphPack
+        uses: actions/checkout@v4
+        with:
+          path: graphpack
+
+      - name: Check out the engine at the pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ENGINE_REPO }}
+          ref: ${{ env.ENGINE_REF }}
+          path: flexible-graphrag
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: graphpack
+        run: |
+          uv venv --python 3.12
+          uv pip install -e ../flexible-graphrag/flexible-graphrag
+          uv pip install -e ".[dev]"
+
+      # 1. Lint
+      - name: Lint
+        working-directory: graphpack
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      # 2. Unit tests — includes the constitution checks (no Python in domains/,
+      #    no pack name in code, no module shadowing an engine module).
+      - name: Unit tests
+        working-directory: graphpack
+        run: uv run pytest -m "not integration"
+
+      # 3. Every pack passes static validation.
+      - name: Validate packs
+        working-directory: graphpack
+        run: uv run graphpack packs validate
+
+      # 4. Fresh-apply: an empty database takes every migration in order, and a
+      #    second run applies nothing. This is what keeps the migration list
+      #    honest as it grows.
+      - name: Migrations apply from empty
+        working-directory: graphpack
+        run: |
+          uv run graphpack migrate
+          uv run graphpack migrate status
+          test -z "$(uv run graphpack migrate --dry-run | grep -o '[0-9]* pending' || true)"
+
+      # 5. Integration tests against the live Neo4j.
+      - name: Integration tests
+        working-directory: graphpack
+        run: uv run pytest -m "integration and not vector"
+
+      # 6. The central claim: the engine checkout is byte-identical to upstream.
+      #    Nothing in GraphPack may write to it, and no build step may leave a
+      #    stray file behind.
+      - name: Engine repository is untouched
+        run: |
+          cd flexible-graphrag
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::The engine checkout was modified. GraphPack must not touch engine source."
+            git status --porcelain
+            git diff
+            exit 1
+          fi
+          echo "Engine checkout clean at $(git rev-parse --short HEAD)"

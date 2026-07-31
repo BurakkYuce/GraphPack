@@ -1,0 +1,38 @@
+# Open-source Python ecosystem pack.
+#
+# Chosen as the first of two maximally different verticals: the backbone comes
+# ready-made from structured dependency data, entity resolution is mostly exact
+# (package names are canonical identifiers), and the corpus is English.
+# The tr-law pack is the opposite on all three counts.
+
+name: oss
+version: 0.1.0
+lang: en
+id_prefix: pypi
+description: >
+  Python packaging ecosystem — packages, releases, repositories and the issue
+  threads that discuss them. Backbone from deps.dev dependency data; corpus from
+  permissively licensed GitHub issue text.
+
+extraction:
+  # strict=true keeps extracted types inside the ontology, at some cost to
+  # recall. Phase 4 measures both settings instead of assuming.
+  strict_schema: true
+  max_triplets_per_chunk: 20
+  chunk_size: 1024
+  chunk_overlap: 128
+
+llm:
+  # Left unset: the engine derives provider and credentials from the
+  # environment. Development runs against a local Ollama, the final measured
+  # run against a hosted API — the pack does not need to know which.
+  provider: null
+  config: {}
+
+embedding:
+  kind: null
+  model: null
+  dimension: null
+
+stores:
+  qdrant_collection: oss_chunks

@@ -1,0 +1,67 @@
+# GraphPack infrastructure: one Neo4j, one Qdrant.
+#
+# Modelled on the engine's docker/includes/{neo4j,qdrant}.yaml but kept here so
+# the engine checkout stays byte-identical to upstream. GraphPack's generality
+# claim is about domains, not databases, so the engine's other 14 graph and 9
+# vector backends are deliberately out of scope.
+#
+#   docker compose -f infra/compose.yaml up -d
+#   docker compose -f infra/compose.yaml down          # keeps volumes
+#   docker compose -f infra/compose.yaml down -v       # drops all data
+
+name: graphpack
+
+services:
+  neo4j:
+    # Community edition: exactly one database. Packs therefore share `neo4j`
+    # and are separated by a `pack` property on every node.
+    image: neo4j:5.26.0
+    container_name: graphpack-neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      # Backbone loading writes in large UNWIND batches.
+      - NEO4J_server_memory_heap_initial__size=1G
+      - NEO4J_server_memory_heap_max__size=2G
+      - NEO4J_server_memory_pagecache_size=1G
+    ports:
+      - "7474:7474"   # HTTP / Browser
+      - "7687:7687"   # Bolt
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      # neo4j-admin dump target — the rollback story for migrations.
+      - ../snapshots:/snapshots
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p password 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+
+  qdrant:
+    # Pinned to match the qdrant-client the engine installs (1.18.x). The client
+    # refuses a minor-version gap wider than one, so bumping the dependency means
+    # bumping this tag.
+    image: qdrant/qdrant:v1.18.0
+    container_name: graphpack-qdrant
+    ports:
+      - "6333:6333"   # REST
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # The image has no curl or wget; its own binary can answer instead.
+      test: ["CMD", "/qdrant/qdrant", "--version"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  qdrant_data:

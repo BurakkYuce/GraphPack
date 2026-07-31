@@ -1,0 +1,142 @@
+@prefix oss:  <http://graphpack.dev/oss/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# Extraction schema for the Python packaging ecosystem.
+#
+# Authored against the engine's OWL reader (rdf/ontology_manager.py):
+#   - classes must be declared with an explicit `a owl:Class`
+#   - relations with `a owl:ObjectProperty` plus rdfs:domain AND rdfs:range
+#   - local names reach the extractor upper-cased (Package -> PACKAGE)
+#
+# Kept deliberately small. Every extra type widens the extractor's label space
+# and costs precision; phase 2 grows this only where the error analysis asks
+# for it.
+
+#################################################################
+#    Classes
+#################################################################
+
+oss:Package a owl:Class ;
+    rdfs:label "Package" ;
+    rdfs:comment "A distributable Python package as published on an index, e.g. urllib3." .
+
+oss:Release a owl:Class ;
+    rdfs:label "Release" ;
+    rdfs:comment "One published version of a package, e.g. urllib3 2.2.1." .
+
+oss:Repository a owl:Class ;
+    rdfs:label "Repository" ;
+    rdfs:comment "A source code repository hosting a package, e.g. urllib3/urllib3 on GitHub." .
+
+oss:Issue a owl:Class ;
+    rdfs:label "Issue" ;
+    rdfs:comment "An issue or pull request thread discussing a repository." .
+
+oss:Person a owl:Class ;
+    rdfs:label "Person" ;
+    rdfs:comment "A maintainer, contributor or reporter identified by their account handle." .
+
+oss:Vulnerability a owl:Class ;
+    rdfs:label "Vulnerability" ;
+    rdfs:comment "A disclosed security issue identified by an advisory id, e.g. CVE-2023-45803." .
+
+#################################################################
+#    Object properties
+#################################################################
+
+oss:depends_on a owl:ObjectProperty ;
+    rdfs:label "depends on" ;
+    rdfs:comment "The subject package requires the object package at build or run time." ;
+    rdfs:domain oss:Package ;
+    rdfs:range oss:Package .
+
+oss:has_release a owl:ObjectProperty ;
+    rdfs:label "has release" ;
+    rdfs:domain oss:Package ;
+    rdfs:range oss:Release .
+
+oss:hosted_in a owl:ObjectProperty ;
+    rdfs:label "hosted in" ;
+    rdfs:comment "The package's source lives in this repository." ;
+    rdfs:domain oss:Package ;
+    rdfs:range oss:Repository .
+
+oss:reported_in a owl:ObjectProperty ;
+    rdfs:label "reported in" ;
+    rdfs:comment "The issue thread belongs to this repository." ;
+    rdfs:domain oss:Issue ;
+    rdfs:range oss:Repository .
+
+oss:mentions_package a owl:ObjectProperty ;
+    rdfs:label "mentions package" ;
+    rdfs:comment "The issue text refers to this package. The mention is raw; resolution to a canonical package happens in a separate pass." ;
+    rdfs:domain oss:Issue ;
+    rdfs:range oss:Package .
+
+oss:maintains a owl:ObjectProperty ;
+    rdfs:label "maintains" ;
+    rdfs:domain oss:Person ;
+    rdfs:range oss:Package .
+
+oss:authored a owl:ObjectProperty ;
+    rdfs:label "authored" ;
+    rdfs:comment "The person opened or wrote the issue." ;
+    rdfs:domain oss:Person ;
+    rdfs:range oss:Issue .
+
+oss:affects a owl:ObjectProperty ;
+    rdfs:label "affects" ;
+    rdfs:comment "The vulnerability applies to this release." ;
+    rdfs:domain oss:Vulnerability ;
+    rdfs:range oss:Release .
+
+oss:fixed_in a owl:ObjectProperty ;
+    rdfs:label "fixed in" ;
+    rdfs:comment "The vulnerability is resolved as of this release." ;
+    rdfs:domain oss:Vulnerability ;
+    rdfs:range oss:Release .
+
+#################################################################
+#    Datatype properties
+#################################################################
+
+oss:name a owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:comment "Distribution name as published, before PEP 503 normalisation." ;
+    rdfs:domain oss:Package ;
+    rdfs:range xsd:string .
+
+oss:version a owl:DatatypeProperty ;
+    rdfs:label "version" ;
+    rdfs:domain oss:Release ;
+    rdfs:range xsd:string .
+
+oss:url a owl:DatatypeProperty ;
+    rdfs:label "url" ;
+    rdfs:domain oss:Repository ;
+    rdfs:range xsd:string .
+
+oss:title a owl:DatatypeProperty ;
+    rdfs:label "title" ;
+    rdfs:domain oss:Issue ;
+    rdfs:range xsd:string .
+
+oss:handle a owl:DatatypeProperty ;
+    rdfs:label "handle" ;
+    rdfs:comment "Account name on the hosting platform." ;
+    rdfs:domain oss:Person ;
+    rdfs:range xsd:string .
+
+oss:advisory_id a owl:DatatypeProperty ;
+    rdfs:label "advisory id" ;
+    rdfs:comment "Advisory identifier, e.g. CVE-2023-45803 or GHSA-g4mx-q9vg-27p4." ;
+    rdfs:domain oss:Vulnerability ;
+    rdfs:range xsd:string .
+
+oss:severity a owl:DatatypeProperty ;
+    rdfs:label "severity" ;
+    rdfs:domain oss:Vulnerability ;
+    rdfs:range xsd:string .

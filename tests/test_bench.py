@@ -94,13 +94,34 @@ def test_a_null_query_is_right_when_it_retrieves_nothing():
 
 
 class FakeSystem:
-    """Stands in for the engine's hybrid search."""
+    """Stands in for the engine's vector index.
+
+    Retrieval goes through the index rather than `system.search`, which returns
+    no document identity at all — its `source` field is the retriever's name, so
+    every passage once attributed to an article called "Qdrant vector".
+    """
+
+    class _Node:
+        def __init__(self, ref):
+            self.node = self
+            self.ref_doc_id = ref
+
+    class _Retriever:
+        def __init__(self, docs, top_k):
+            self.docs, self.top_k = docs, top_k
+
+        async def aretrieve(self, question):
+            return [FakeSystem._Node(d) for d in self.docs[: self.top_k]]
+
+    class _Index:
+        def __init__(self, docs):
+            self.docs = docs
+
+        def as_retriever(self, similarity_top_k=10):
+            return FakeSystem._Retriever(self.docs, similarity_top_k)
 
     def __init__(self, docs):
-        self.docs = docs
-
-    async def search(self, question, top_k=10):
-        return [{"text": "…", "score": 1.0, "doc_id": d} for d in self.docs[:top_k]]
+        self.vector_index = FakeSystem._Index(docs)
 
 
 def test_several_chunks_of_one_article_are_one_result():
@@ -235,3 +256,14 @@ def test_retrieved_but_unattributable_is_reported_as_such():
     scores = score([result([], ["gold"], unattributed=5)])
 
     assert scores.attribution_rate == 0.0
+
+
+def test_retrieval_that_returns_no_identity_is_counted_as_unattributed():
+    """The engine's `system.search` returns {content, file_name, file_type, rank,
+    score, source} and no document id — `source` is the retriever's name. Every
+    passage attributed to an article called "Qdrant vector", which is not a miss
+    and must not be scored as one."""
+    got = run_query(FakeSystem(["", "mhr:a", ""]), BenchQuery("q", frozenset({"mhr:a"})))
+
+    assert got.unattributed == 2
+    assert got.ranked == ("mhr:a",)

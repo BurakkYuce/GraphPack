@@ -151,6 +151,24 @@ def traverse(session, pack: str, intent, entity_id: str) -> tuple[list[Found], l
     return found, edges
 
 
+#: One loop for the process, because the engine's clients bind to the loop they
+#: were first used on. asyncio.run creates a loop and closes it on the way out,
+#: so the second search in a process died with "Event loop is closed" — which a
+#: benchmark of 2,255 queries reported as a retrieval score of zero.
+_LOOP = None
+
+
+def _run(coroutine):
+    """Run a coroutine on this process's one long-lived loop."""
+    global _LOOP
+    import asyncio
+
+    if _LOOP is None or _LOOP.is_closed():
+        _LOOP = asyncio.new_event_loop()
+        asyncio.set_event_loop(_LOOP)
+    return _LOOP.run_until_complete(coroutine)
+
+
 def search(system, question: str, top_k: int = 6) -> list[Passage]:
     """Hybrid search over the corpus, through the engine.
 
@@ -158,10 +176,8 @@ def search(system, question: str, top_k: int = 6) -> list[Passage]:
     in-memory docstore, so a separate process would search vectors only and
     quietly return a worse answer.
     """
-    import asyncio
-
     try:
-        results = asyncio.run(system.search(question, top_k=top_k))
+        results = _run(system.search(question, top_k=top_k))
     except Exception as exc:  # a retriever that is not set up should not end the run
         logger.warning("Hybrid search failed, continuing without passages — %s", exc)
         return []

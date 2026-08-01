@@ -169,11 +169,77 @@ always built, and only `fuzzy` needs the names. `REPOSITORY` and `RELEASE` do
 not ask for fuzzy, so having no names is correct. The log line now says which
 kind of matching a rule does instead of reporting an absence.
 
+## The MultiHop-RAG benchmark, phase 7
+
+```bash
+uv run graphpack backbone load bench-wiki    # 609 articles, no model
+uv run graphpack ingest bench-wiki           # 6 m 6 s, no extraction
+uv run graphpack bench bench-wiki            # all 2,556 queries
+```
+
+| metric | value | 95% interval |
+|---|---:|---|
+| Hit@1 | 0.631 | 0.610 – 0.650 |
+| Hit@2 | 0.794 | 0.777 – 0.810 |
+| Hit@4 | 0.909 | 0.896 – 0.920 |
+| Hit@10 | 0.977 | 0.970 – 0.982 |
+| MRR@10 | **0.759** | |
+
+2,255 answerable queries; 301 with no answer in the corpus.
+
+The contrast with the oss evaluation is the point of having both. Same
+machinery, same intervals, 2,255 measurements instead of 20: ±2 points instead
+of ±13. Nothing about the system got more certain — the measurement did.
+
+### What this is a number for, exactly
+
+- **Vector retrieval only.** The engine's BM25 leg is an in-memory docstore
+  belonging to the process that ingested, so a benchmark run as a separate
+  command has no full-text half. `LI BM25: get_retriever() returned None` is the
+  engine saying so. A true hybrid number needs ingest and benchmark in one
+  process, which is a run this has not done.
+- `nomic-embed-text`, chunk size 1024, overlap 128, top-30 retrieved.
+- **Chunks are reduced to articles.** Several chunks of one article are one
+  result, taking the rank of its best chunk. Counting chunks would make Hit@10 a
+  measure of how finely an article was split.
+- **No comparison to the published table is made here.** The paper's numbers
+  depend on its embedding model, chunk size and whether a reranker ran; quoting
+  ours beside theirs without matching that would be a comparison in appearance
+  only. What the pack establishes is that the comparison is now one run away.
+
+### The null queries measure nothing, and that is worth saying
+
+301 queries have no answer in the corpus. Zero of them retrieved nothing —
+which is not a failure, because a vector retriever has no way to abstain. It
+returns its top-k for any input, so "retrieved nothing" can never happen and the
+metric is inert.
+
+It is kept, reported separately, and labelled rather than dropped, because the
+number that cannot move is itself the finding: answering "there is nothing here"
+is a decision the retrieval layer cannot make, and has to be made above it.
+
+### Extraction is 97% of the cost
+
+Two ingests, same machine, same models:
+
+| pack | documents | chunks | extraction | wall clock |
+|---|---:|---:|---|---:|
+| oss | 200 | 611 | yes | 10 h 37 m |
+| bench-wiki | 609 | 8,927 | no | 6 m 6 s |
+
+Three times the documents and fifteen times the chunks, in one hundredth of the
+time. Chunking and embedding are not what makes a GraphRAG ingest expensive on
+local hardware; the model reading every chunk is. That is the number to put
+beside `extract: false` when deciding whether a pack needs it.
+
 ## What has not been measured
 
 - **tr-law extraction.** Its corpus has never been ingested — 0 `__Entity__`
   nodes — so the cross-pack comparison of resolution methods is not available.
   Everything reported for tr-law so far is its backbone and its traversals.
+- **Hybrid retrieval.** Every benchmark number above is the vector leg alone.
+- **The published MultiHop-RAG table.** See above: matching its setup is a
+  separate run, not a paragraph.
 - **`strict_schema` true versus false.** The sweep this phase planned is not
   worth running: on the dynamic extractor the setting is inert, and the section
   above is the evidence.

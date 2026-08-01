@@ -116,16 +116,38 @@ def check_gold_is_reachable(session, pack: str, queries: list[BenchQuery]) -> No
         )
 
 
-def run_query(system, query: BenchQuery, top_k: int = DEFAULT_TOP_K) -> QueryResult:
-    """Retrieve for one question and reduce the passages to ranked articles."""
-    from graphpack.agent.tools import search
+def retrieve(system, question: str, top_k: int) -> list[str]:
+    """Retrieved chunks, as the ids of the documents they came from.
 
-    passages = search(system, query.question, top_k=top_k)
+    Not through ``system.search``: that returns
+    ``{content, file_name, file_type, rank, score, source}`` and no document
+    identity at all — ``source`` is the retriever's name, so every passage
+    attributed to an article called "Qdrant vector" and the benchmark scored a
+    confident zero. Retrieving through the index keeps ``ref_doc_id``, which is
+    the id the pack's corpus block assigned.
+
+    Vector only. The engine's BM25 leg is an in-memory docstore belonging to the
+    process that ingested, so a benchmark run separately has no full-text half.
+    That is a property of the measurement and is reported with the numbers.
+    """
+    from graphpack.agent.tools import _run
+
+    retriever = system.vector_index.as_retriever(similarity_top_k=top_k)
+    nodes = _run(retriever.aretrieve(question))
+    return [(node.node.ref_doc_id or "").strip() for node in nodes]
+
+
+def run_query(system, query: BenchQuery, top_k: int = DEFAULT_TOP_K) -> QueryResult:
+    """Retrieve for one question and reduce the chunks to ranked articles."""
+    try:
+        documents = retrieve(system, query.question, top_k)
+    except Exception as exc:
+        logger.warning("Retrieval failed for %r — %s", query.question[:60], exc)
+        documents = []
 
     ranked: list[str] = []
     unattributed = 0
-    for passage in passages:
-        article = (passage.document or "").strip()
+    for article in documents:
         if not article:
             unattributed += 1
             continue

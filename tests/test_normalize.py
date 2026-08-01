@@ -105,6 +105,47 @@ def test_repository_urls_reduce_to_owner_and_repo(pipelines, url, expected):
     assert pipelines["repo_slug"](url) == expected
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/sponsors/Julian",
+        "https://github.com/orgs/python/repositories",
+        "https://github.com/topics/python",
+        "https://github.com/marketplace/actions/checkout",
+    ],
+)
+def test_reserved_github_paths_are_not_repositories(url):
+    """A funding link has exactly the shape of owner/repo and is not one.
+
+    Found by looking at the loaded graph rather than by any test: eleven
+    "repositories" named after maintainers, because packages link to
+    github.com/sponsors/<person> and the shape matched.
+    """
+    from graphpack.backbone import load_sources
+    from graphpack.backbone.normalize import render
+    from graphpack.packs import load_pack
+
+    pack = load_pack("oss")
+    sources = load_sources(pack.path("sources.yaml"))
+
+    assert render("{v|repo_slug}", {"v": url}, sources.pipelines) == ""
+
+
+def test_the_resolve_rules_reject_the_same_paths():
+    """Both sides of the join have to agree, or a mention resolves to a node the
+    backbone would never have created."""
+    from graphpack.packs import load_pack
+    from graphpack.resolve import load_rules
+    from graphpack.resolve.methods import apply
+
+    pack = load_pack("oss")
+    rules = load_rules(pack.path("resolve.yaml"), pack.path("aliases.csv"))
+    rule = rules.for_entity("REPOSITORY")
+
+    assert apply(rule.id, "https://github.com/sponsors/Julian", rules.pipelines) == ""
+    assert apply(rule.id, "https://github.com/crate-py/rpds", rules.pipelines) == "gh:crate-py/rpds"
+
+
 def test_first_populated_field_wins(pipelines):
     """Publishers record the same fact in whichever field they filled in."""
     row = {"a": None, "b": "https://github.com/psf/requests"}

@@ -45,10 +45,16 @@ normalize:
   # one. The host prefix is optional but tried first, so a URL yields the pair
   # after github.com rather than the host itself — without it,
   # "https://github.com/psf/requests/issues" resolves to "github.com/psf".
+  # Two steps rather than one optional prefix. Making the host optional inside a
+  # single pattern means a URL that fails the reserved-path check simply matches
+  # further along as a bare pair: github.com/sponsors/Julian is refused as a
+  # repository and then accepted as "github.com/sponsors". Stripping the host
+  # first leaves one thing to judge.
   repo_slug:
     - strip
     - lower
-    - {regex_extract: {pattern: "(?:github\\.com[:/]+)?([A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*)"}}
+    - {regex_replace: {pattern: "^.*?github\\.com[:/]+", replace: ""}}
+    - {regex_extract: {pattern: "^(?!sponsors/|orgs/|users/|settings/|features/|about/|marketplace/|apps/|topics/|collections/|security/|pricing/|login/)([A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*)"}}
     - {regex_replace: {pattern: "\\.git$", replace: ""}}
 
 # ISSUE, PERSON and VULNERABILITY have no rules on purpose: the backbone holds

@@ -31,10 +31,15 @@ normalize:
   # Repository URLs arrive with assorted decoration: a trailing slash, a .git
   # suffix, a tree/branch path. Reduce to owner/repo so the same repository
   # reached by two routes becomes one node.
+  #
+  # Not every github.com path is a repository. A funding link points at
+  # github.com/sponsors/<person>, which has exactly the shape of owner/repo and
+  # is not one — that produced eleven "repositories" named after maintainers.
+  # The reserved first segments are excluded by refusing to match them.
   repo_slug:
     - strip
     - lower
-    - {regex_extract: {pattern: "github\\.com[:/]+([^/]+/[^/#?]+)"}}
+    - {regex_extract: {pattern: "github\\.com[:/]+(?!sponsors/|orgs/|users/|settings/|features/|about/|marketplace/|apps/|topics/|collections/|security/|pricing/|login/)([^/]+/[^/#?]+)"}}
     - {regex_replace: {pattern: "\\.git$", replace: ""}}
 
 fetch:

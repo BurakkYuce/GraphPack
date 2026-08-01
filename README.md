@@ -37,6 +37,8 @@ gold edges and is reported as the weak measurement it is.
 
 - [docs/WRITEUP.md](docs/WRITEUP.md) — what the project claims, what it showed,
   and where it is weak
+- [docs/ANLATIM.md](docs/ANLATIM.md) — the same thing in Turkish, without the
+  jargon, for explaining it to somebody who does not build these
 - [docs/RESULTS.md](docs/RESULTS.md) — every number, with the command that
   produces it
 

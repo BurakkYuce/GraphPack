@@ -116,7 +116,7 @@ def build_settings(pack: Pack, schema: CompiledSchema | None = None):
         "disable_properties": not properties_supported(provider),
         "strict_schema_validation": pack.strict_schema,
         "max_triplets_per_chunk": pack.max_triplets_per_chunk,
-        "enable_knowledge_graph": True,
+        "enable_knowledge_graph": pack.extract,
         # Stores.
         "pg_graph_db": PG_GRAPH_DB,
         "vector_db": VECTOR_DB,

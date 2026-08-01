@@ -1,0 +1,130 @@
+# Two files, and everything comes out of them.
+#
+# `corpus.json` is 609 articles with metadata and body. `MultiHopRAG.json` is
+# 2,556 queries, each carrying the evidence a correct answer must rest on. The
+# evidence names articles by title and URL, and every one of the 6,084 evidence
+# entries matches an article in the corpus by both — so the gold needs no
+# alignment step and no annotation. That is the same self-labelling trick the
+# other two packs use, except here somebody else did the labelling and
+# published numbers alongside it.
+
+normalize:
+  # Outlet and author names become identifiers. "The Verge" and "the verge" are
+  # the same outlet; punctuation in a byline is not part of who wrote it.
+  slug:
+    - strip
+    - lower
+    - {regex_replace: {pattern: "[^a-z0-9]+", replace: "-"}}
+    - {regex_replace: {pattern: "^-+|-+$", replace: ""}}
+
+  # Articles are keyed by URL. Scheme and trailing slash vary between the
+  # corpus and the evidence lists; without stripping them the gold would point
+  # at articles that exist under a slightly different string.
+  url_key:
+    - strip
+    - lower
+    - {regex_replace: {pattern: "^https?://(www\\.)?", replace: ""}}
+    - {regex_replace: {pattern: "/+$", replace: ""}}
+
+fetch:
+  - id: corpus
+    url: "https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/corpus.json"
+    out: articles.jsonl
+    keep:
+      title: title
+      author: author
+      source: source
+      category: category
+      published_at: published_at
+      url: url
+      body: body
+
+  - id: queries
+    url: "https://huggingface.co/datasets/yixuantt/MultiHopRAG/resolve/main/MultiHopRAG.json"
+    out: queries.jsonl
+    keep:
+      query: query
+      answer: answer
+      question_type: question_type
+      evidence_list: evidence_list
+
+derive:
+  # One row per (query, evidence article): the gold retrieval set, flattened.
+  # `unique` is deliberately absent — a query citing the same article twice is
+  # two facts drawn from it, and collapsing them would understate the evidence.
+  - id: gold
+    source: queries.jsonl
+    out: gold.jsonl
+    explode: evidence_list
+    fields:
+      question: "{query}"
+      question_type: "{question_type}"
+      article: "mhr:{value.url|url_key}"
+    require: [question, article]
+
+load:
+  # --- the articles ----------------------------------------------------------
+  - source: articles.jsonl
+    node:
+      label: Article
+      id: "mhr:{url|url_key}"
+      properties:
+        title: "{title}"
+        published_at: "{published_at}"
+
+  # --- outlets, bylines, topics ---------------------------------------------
+  # Each is its own step because each is its own node: a step that tried to
+  # write an article and its outlet at once could not MERGE either cleanly.
+  - source: articles.jsonl
+    node:
+      label: Source
+      id: "src:{source|slug}"
+      properties:
+        name: "{source}"
+
+  - source: articles.jsonl
+    node:
+      label: Author
+      id: "author:{author|slug}"
+      properties:
+        name: "{author}"
+
+  - source: articles.jsonl
+    node:
+      label: Category
+      id: "cat:{category|slug}"
+      properties:
+        name: "{category}"
+
+  # --- the edges -------------------------------------------------------------
+  - source: articles.jsonl
+    edge:
+      type: PUBLISHED_BY
+      from: "mhr:{url|url_key}"
+      to: "src:{source|slug}"
+
+  # 68 of 609 articles have no byline. The identity renders incomplete and the
+  # row is dropped rather than pointing at an author called "none".
+  - source: articles.jsonl
+    edge:
+      type: WRITTEN_BY
+      from: "mhr:{url|url_key}"
+      to: "author:{author|slug}"
+
+  - source: articles.jsonl
+    edge:
+      type: IN_CATEGORY
+      from: "mhr:{url|url_key}"
+      to: "cat:{category|slug}"
+
+corpus:
+  # The bodies. This is the half the benchmark measures: chunked, embedded and
+  # indexed for hybrid search, with no extraction pass behind it.
+  - source: articles.jsonl
+    id: "mhr:{url|url_key}"
+    text: body
+    metadata:
+      title: "{title}"
+      source: "{source}"
+      category: "{category}"
+      published_at: "{published_at}"

@@ -8,14 +8,31 @@ of aliases — that turns a general GraphRAG pipeline into a specific vertical. 
 Python. The engine repository is never modified; CI proves it.
 
 The thesis under test: *adding a new vertical costs configuration, not code —
-measured with precision/recall/F1 in two domains that share almost nothing.*
-`oss` (Python packaging: ready-made backbone, exact entity resolution, English)
-and `tr-law` (Turkish case law: backbone built from citations, fuzzy resolution,
-Turkish).
+measured with precision/recall/F1 in domains that share almost nothing.*
 
-**Status:** phase 2 in progress. The `oss` backbone is live — 1,000 packages,
-2,437 dependency edges, built from configuration alone — and the corpus half now
-fetches GitHub issue threads and runs them through the engine's extraction.
+| pack | domain | backbone | resolution | language |
+|---|---|---|---|---|
+| [`oss`](domains/oss/) | Python packaging | published metadata | exact | English |
+| [`tr-law`](domains/tr-law/) | Turkish case law | built from citations in prose | fuzzy | Turkish |
+| [`bench-wiki`](domains/bench-wiki/) | news, as a published benchmark | bibliographic metadata | fuzzy, on names | English |
+
+The third one is where the claim gets a number. `bench-wiki` was added after the
+other two were finished and measured, and it cost:
+
+```
+297 lines of configuration        9 files, no Python
+  8 lines of GraphPack code       one new pack knob: extract: false
+  0 lines of engine change        CI asserts the engine checkout is byte-identical
+```
+
+The eight lines are the honest part of the claim. A pack whose every edge comes
+from a metadata field has nothing for a model to extract, and nothing in the
+contract could say so — so the contract grew a knob. That is the shape the
+thesis predicts a new vertical should have: configuration for the domain, and
+occasionally one general capability the domain was the first to need.
+
+**Status:** phases 0–6 and 8 complete; three packs live. `oss` corpus extraction
+is running, and phase 7's benchmark numbers wait on it.
 
 ## Quickstart
 

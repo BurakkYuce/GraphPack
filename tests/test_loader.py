@@ -7,6 +7,8 @@ configured engine with no change to engine source. These tests exercise the real
 
 from __future__ import annotations
 
+import textwrap
+
 import pytest
 
 from graphpack.packs.contract import Pack
@@ -106,3 +108,46 @@ def test_clear_engine_env_reports_what_it_removed(monkeypatch):
 
     assert set(removed) == {"QDRANT_VECTOR_DB_CONFIG", "GRAPH_DB_CONFIG"}
     assert clear_engine_env() == []
+
+
+def test_extraction_is_on_unless_a_pack_turns_it_off(pack_dir):
+    pack = Pack.from_dir(pack_dir("widgets"))
+
+    assert build_settings(pack).enable_knowledge_graph is True
+
+
+def test_a_pack_whose_graph_is_metadata_can_skip_extraction(pack_dir):
+    """`extract: false` has to reach the engine, not just the Pack object.
+
+    A pack whose every edge comes from a structured field has nothing for a
+    model to find, and running one over its corpus costs days of GPU to change
+    no number. The corpus is still chunked and embedded — only extraction is
+    skipped — so this asserts the one setting and not a whole disabled pipeline.
+    """
+    root = pack_dir(
+        "metadata-only",
+        pack_yaml=textwrap.dedent(
+            """\
+            name: metadata-only
+            version: 1.0.0
+            lang: en
+            id_prefix: ex
+            extraction:
+              extract: false
+              strict_schema: true
+              max_triplets_per_chunk: 5
+              chunk_size: 256
+              chunk_overlap: 32
+            stores:
+              qdrant_collection: metadata_only_chunks
+            """
+        ),
+    )
+    pack = Pack.from_dir(root)
+
+    settings = build_settings(pack)
+
+    assert pack.extract is False
+    assert settings.enable_knowledge_graph is False
+    # Still indexed for search: skipping extraction is not skipping the corpus.
+    assert str(settings.vector_db) == "qdrant"

@@ -1,0 +1,78 @@
+# What the graph can be asked, over a bibliographic backbone.
+#
+# The benchmark's own 2,556 queries are not answered from here — they are
+# answered from the corpus, and that is what `graphpack bench` measures. These
+# intents are the other half: the questions a graph can answer and a retriever
+# cannot, because the answer is a fact about publication rather than a passage
+# in an article. "Which outlets covered this" is a join, not a paragraph.
+#
+# Keeping both in one pack is the honest comparison. The benchmark number says
+# how the retrieval does; these say what having a backbone buys on top.
+
+lookup: |
+  MATCH (n {pack: $pack})
+  WHERE n.id = $needle
+     OR toLower(toString(coalesce(n.name, ''))) = toLower($needle)
+     OR toLower(toString(coalesce(n.title, ''))) = toLower($needle)
+  RETURN n.id AS id,
+         toString(coalesce(n.name, n.title, n.id)) AS name,
+         labels(n)[0] AS label
+  LIMIT $limit
+
+intents:
+  - name: articles_from_source
+    description: Articles a given outlet published.
+    entity: SOURCE
+    match: ["published by", "articles from", "which articles did", "covered by"]
+    limit: 50
+    cypher: |
+      MATCH (a:Article {pack: $pack})-[:PUBLISHED_BY]->(s {pack: $pack})
+      WHERE s.id = $entity_id
+      RETURN a.id AS id, a.title AS name, 'PUBLISHED_BY' AS via
+      ORDER BY a.published_at DESC
+      LIMIT {limit}
+
+  - name: articles_by_author
+    description: Articles carrying a given byline.
+    entity: AUTHOR
+    match: ["written by", "articles by", "who wrote", "byline"]
+    limit: 50
+    cypher: |
+      MATCH (a:Article {pack: $pack})-[:WRITTEN_BY]->(w {pack: $pack})
+      WHERE w.id = $entity_id
+      RETURN a.id AS id, a.title AS name, 'WRITTEN_BY' AS via
+      ORDER BY a.published_at DESC
+      LIMIT {limit}
+
+  # Two hops: from an article out to its outlet and back down to that outlet's
+  # other articles. A retriever answers this only by accident.
+  - name: same_outlet
+    description: Other articles from the outlet that published this one.
+    entity: ARTICLE
+    match: ["same outlet", "same publisher", "same source", "elsewhere in"]
+    hops: 2
+    limit: 40
+    cypher: |
+      MATCH (a {pack: $pack})-[:PUBLISHED_BY]->(:Source {pack: $pack})
+            <-[:PUBLISHED_BY]-(other:Article {pack: $pack})
+      WHERE a.id = $entity_id AND other.id <> a.id
+      RETURN other.id AS id, other.title AS name, 'SAME_OUTLET' AS via
+      ORDER BY other.published_at DESC
+      LIMIT {limit}
+
+  # Which outlets covered the same topic — the join that motivates having a
+  # graph at all. Two hops through the category, counting outlets rather than
+  # articles so a prolific outlet does not bury the rest.
+  - name: outlets_covering
+    description: Outlets that published in a given category, most active first.
+    entity: CATEGORY
+    match: ["which outlets", "who covered", "which publishers", "outlets covering"]
+    hops: 2
+    limit: 40
+    cypher: |
+      MATCH (c {pack: $pack})<-[:IN_CATEGORY]-(a:Article {pack: $pack})
+            -[:PUBLISHED_BY]->(s:Source {pack: $pack})
+      WHERE c.id = $entity_id
+      RETURN s.id AS id, s.name AS name, count(a) AS weight, 'COVERED' AS via
+      ORDER BY weight DESC
+      LIMIT {limit}

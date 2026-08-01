@@ -78,6 +78,12 @@ class Pack:
     # strict=false for recall while type-clean extraction wants strict=true —
     # phase 4 measures both instead of guessing.
     strict_schema: bool = True
+    # Whether the corpus goes through LLM extraction at all. A pack whose graph
+    # comes entirely from structured metadata has nothing to extract: running a
+    # model over the text would cost hours and add no edge the pack declares.
+    # The corpus is still chunked, embedded and indexed for search — only the
+    # extraction stage is skipped.
+    extract: bool = True
     max_triplets_per_chunk: int = 20
     chunk_size: int = 1024
     chunk_overlap: int = 128
@@ -175,6 +181,7 @@ class Pack:
             id_prefix=str(data.get("id_prefix") or ""),
             description=str(data.get("description") or ""),
             strict_schema=bool(extraction.get("strict_schema", True)),
+            extract=bool(extraction.get("extract", True)),
             max_triplets_per_chunk=int(extraction.get("max_triplets_per_chunk", 20)),
             chunk_size=int(extraction.get("chunk_size", 1024)),
             chunk_overlap=int(extraction.get("chunk_overlap", 128)),

@@ -1,0 +1,21 @@
+entity,surface,id,note
+# Short on purpose. name_key lowercases, strips a leading "the" and folds
+# punctuation, and fuzzy covers the ordinary variation on top — "Verge" reaches
+# The Verge without a line here. This file is for forms string distance cannot
+# reach, which in 49 outlets means two things: initialisms, and the outlets
+# whose dataset name carries a section suffix so that a question naming the
+# publisher shares almost no characters with it.
+#
+# Ids are the loader's, not the resolver's. The backbone slugs "The Verge" to
+# src:the-verge and keeps the article; a question's name_key strips it. The
+# first version of this file pointed at src:verge, which does not exist — every
+# id below was checked against the loaded graph.
+SOURCE,tc,src:techcrunch,Initialism.
+SOURCE,nyt,src:the-new-york-times,Initialism.
+SOURCE,ft,src:financial-times,"Initialism. Fortune is the other F outlet here; FT conventionally means this one."
+SOURCE,smh,src:the-sydney-morning-herald,Initialism.
+SOURCE,hn,src:hacker-news,Initialism.
+SOURCE,cnbc,src:cnbc-world-business-news-leader,"Dataset name is ""Cnbc | World Business News Leader"" — the bare initialism scores far below threshold against it."
+SOURCE,live science,src:live-science-the-most-interesting-articles,Dataset name carries a tagline.
+SOURCE,scitechdaily,src:scitechdaily-science-space-and-technology-news-2017,Same — tagline and a year.
+CATEGORY,tech,cat:technology,Questions say tech; the dataset's label is technology.

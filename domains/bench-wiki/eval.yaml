@@ -1,0 +1,25 @@
+# Somebody else's ground truth, for once.
+#
+# The other packs derive gold from their own backbone: an edge the structured
+# source already states, scored against what extraction found. There is nothing
+# to score that way here, because this pack runs no extraction.
+#
+# What it has instead is the benchmark's own labelling. Each of the 2,556
+# queries carries the articles a correct answer must rest on — 6,084 evidence
+# entries, every one of which matches a corpus article by title and by URL. So
+# the task is retrieval: given the query, did the corpus half of the pipeline
+# put the right articles in front of the answer?
+#
+# `graphpack bench bench-wiki` runs it and reports Hit@k and MRR@10, which are
+# the numbers the MultiHop-RAG paper reports and therefore the ones worth
+# comparing against. `eval run` is for the extraction metrics the other packs
+# have, and this pack has none — asking for them should say so rather than
+# print zeros that look like failure.
+
+tasks: []
+
+# The full query set is the evaluation. No holdout: nothing here was fitted to
+# this data — the retrieval configuration is the engine's, the chunking is two
+# numbers in pack.yaml chosen from article length before any query was run.
+holdout: 0.0
+seed: 0

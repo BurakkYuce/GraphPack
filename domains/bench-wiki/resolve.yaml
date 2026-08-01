@@ -1,0 +1,67 @@
+# Turning a name in a question into a node.
+#
+# The usual second job of this file — linking what a model found in prose back
+# to the backbone — does not apply. This pack sets `extract: false`, so there
+# are no mentions and these rules will resolve nothing during a resolve pass.
+# What they do carry is the index the agent's lookup uses: a question naming
+# "The Verge" or "Elizabeth Lopatto" has to reach a node, and the match forms
+# below are what it reaches through.
+#
+# Everything here resolves against a backbone that is complete by construction.
+# Unlike the other two packs, an unresolved mention cannot mean "the backbone is
+# missing it" — the backbone holds every outlet, byline and topic in the corpus,
+# so a miss is a naming problem and nothing else. `drop` throughout for that
+# reason: a provisional node would assert an outlet the dataset does not have.
+
+normalize:
+  # Outlet and byline names as a question writes them: any case, with or
+  # without punctuation, and often with a leading article.
+  name_key:
+    - strip
+    - lower
+    - {regex_replace: {pattern: "^the\\s+", replace: ""}}
+    - {regex_replace: {pattern: "[^a-z0-9]+", replace: "-"}}
+    - {regex_replace: {pattern: "^-+|-+$", replace: ""}}
+
+resolve:
+  - entity: SOURCE
+    target: Source
+    id: "src:{name|name_key}"
+    match: "{name|name_key}"
+    # Fuzzy, because an outlet is named loosely — "Verge", "the Verge",
+    # "TheVerge". 88 matches what tr-law uses on statute titles, and for the
+    # same reason: these are phrases, where a suffix difference scores high.
+    methods: [exact, alias, fuzzy]
+    fuzzy_threshold: 88
+    fuzzy_field: name
+    on_unresolved: drop
+
+  - entity: AUTHOR
+    target: Author
+    id: "author:{name|name_key}"
+    match: "{name|name_key}"
+    # Stricter than outlets. Bylines are short and share surnames, and swapping
+    # one journalist for another is a worse answer than no answer.
+    methods: [exact, alias, fuzzy]
+    fuzzy_threshold: 92
+    fuzzy_field: name
+    on_unresolved: drop
+
+  - entity: CATEGORY
+    target: Category
+    id: "cat:{name|name_key}"
+    match: "{name|name_key}"
+    # Six values, fixed by the dataset. Nothing to be fuzzy about.
+    methods: [exact, alias]
+    on_unresolved: drop
+
+  - entity: ARTICLE
+    target: Article
+    id: "mhr:{name|name_key}"
+    match: "{title|name_key}"
+    # An article is reached by its exact title, which questions quote. Fuzzy
+    # over 609 headlines drawn from overlapping news cycles returns the wrong
+    # article often enough to be worse than returning none.
+    methods: [exact]
+    fuzzy_field: title
+    on_unresolved: drop

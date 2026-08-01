@@ -73,6 +73,16 @@ def parse_checks(path: Path) -> list[Check]:
         if line.endswith(";"):
             query = " ".join(statement).rstrip(";").strip()
             title = title_lines[0] if title_lines else query[:60]
+            # Only the first line is the title, so a marker further down would
+            # quietly leave the query as commentary — an assertion that never
+            # asserts, which is worse than not writing one.
+            for later in title_lines[1:]:
+                if _MUST_BE_EMPTY in later:
+                    raise CheckError(
+                        f"{path}: '{title.replace(_MUST_BE_EMPTY, '').strip()}' has "
+                        f"{_MUST_BE_EMPTY} on a later comment line, where it does "
+                        "nothing. Put it on the first line of the block."
+                    )
             checks.append(
                 Check(
                     title=title.replace(_MUST_BE_EMPTY, "").strip(),

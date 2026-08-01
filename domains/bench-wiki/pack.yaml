@@ -1,0 +1,54 @@
+# MultiHop-RAG — a published benchmark, as a pack.
+#
+# The other two packs measure themselves: oss and tr-law build gold from their
+# own structured data, which proves the evaluation is honest but says nothing
+# about how the numbers compare to anyone else's. This one exists to be
+# compared. MultiHop-RAG ships 2,556 multi-hop queries over 609 news articles,
+# each query carrying the list of articles that answer it, and other people have
+# published retrieval numbers on exactly that.
+#
+# It is also the cheapest possible test of the pack abstraction, because it is
+# the domain least like the first two: not packaging, not case law, and its
+# graph is neither published metadata about software nor citations dug out of
+# prose — it is bibliographic. If a third vertical needed engine changes, this
+# is where that would show.
+#
+# One thing it does need that the others did not: `extract: false`. Every edge
+# this pack declares comes from article metadata, so there is nothing for a
+# model to find in the bodies that the benchmark then measures. Running one
+# anyway would cost days of GPU on this hardware and change no number.
+
+name: bench-wiki
+version: 0.1.0
+lang: en
+id_prefix: mhr
+description: >
+  MultiHop-RAG (Tang & Yang, 2024): 609 news articles from 49 outlets with
+  2,556 multi-hop queries. Backbone is bibliographic — who published what, who
+  wrote it, under which category. Gold comes with the queries: each names the
+  articles a correct answer must rest on.
+
+extraction:
+  # Nothing to extract. The graph is metadata, complete before any model runs.
+  # The corpus is still chunked, embedded and indexed — that is the half of the
+  # pipeline this benchmark actually exercises.
+  extract: false
+  strict_schema: true
+  max_triplets_per_chunk: 20
+  # News articles average 10k characters and are written in short paragraphs
+  # that stand alone; a smaller chunk than tr-law's is right, and it keeps the
+  # embedding count down over a corpus three times the size.
+  chunk_size: 1024
+  chunk_overlap: 128
+
+llm:
+  provider: null
+  config: {}
+
+embedding:
+  kind: null
+  model: null
+  dimension: null
+
+stores:
+  qdrant_collection: benchwiki_chunks

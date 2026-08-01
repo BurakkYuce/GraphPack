@@ -1,0 +1,65 @@
+# The bibliographic graph: who published what, who wrote it, under which
+# category. Every edge here comes from a metadata field, so this file documents
+# the graph and constrains GraphPack's own triple validation — it does not steer
+# extraction, because this pack declares `extract: false`.
+#
+# Written to the engine's OWL parser's requirements even so: explicit
+# `a owl:Class`, and every object property carrying both domain and range.
+# `graphpack packs validate` enforces that for every pack, benchmark or not.
+
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix :     <https://graphpack.dev/ns/bench-wiki#> .
+
+<https://graphpack.dev/ns/bench-wiki> a owl:Ontology ;
+    rdfs:label "MultiHop-RAG bibliographic ontology" .
+
+# --- classes ---------------------------------------------------------------
+
+:Article a owl:Class ;
+    rdfs:label "Article" ;
+    rdfs:comment "One news article. Identified by its URL, which the dataset guarantees unique." .
+
+:Source a owl:Class ;
+    rdfs:label "Source" ;
+    rdfs:comment "The outlet that published it — The Verge, TechCrunch, Fortune." .
+
+:Author a owl:Class ;
+    rdfs:label "Author" ;
+    rdfs:comment "A byline. Absent on 68 of 609 articles, so an article need not have one." .
+
+:Category a owl:Class ;
+    rdfs:label "Category" ;
+    rdfs:comment "The dataset's own topic label. Six of them, assigned by the corpus, not inferred." .
+
+# --- relations -------------------------------------------------------------
+
+:PUBLISHED_BY a owl:ObjectProperty ;
+    rdfs:label "PUBLISHED_BY" ;
+    rdfs:domain :Article ;
+    rdfs:range :Source .
+
+:WRITTEN_BY a owl:ObjectProperty ;
+    rdfs:label "WRITTEN_BY" ;
+    rdfs:domain :Article ;
+    rdfs:range :Author .
+
+:IN_CATEGORY a owl:ObjectProperty ;
+    rdfs:label "IN_CATEGORY" ;
+    rdfs:domain :Article ;
+    rdfs:range :Category .
+
+# --- properties ------------------------------------------------------------
+
+:title a owl:DatatypeProperty ;
+    rdfs:domain :Article ;
+    rdfs:range xsd:string .
+
+:published_at a owl:DatatypeProperty ;
+    rdfs:domain :Article ;
+    rdfs:range xsd:string .
+
+:name a owl:DatatypeProperty ;
+    rdfs:domain :Source ;
+    rdfs:range xsd:string .

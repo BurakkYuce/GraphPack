@@ -352,3 +352,40 @@ def test_a_voted_property_takes_the_reading_the_data_agrees_on(neo4j_session, pa
         assert row["n"] == 1, "three mentions of one identity are one node"
     finally:
         neo4j_session.run("MATCH (n {pack: $p}) DETACH DELETE n", p=pack)
+
+
+def test_a_must_be_empty_marker_below_the_title_is_refused(tmp_path):
+    """The first comment line is the title, and only it is scanned for the
+    marker. Written lower down it does nothing: the query stays commentary and
+    the assertion never runs — a check suite that reports OK because it forgot
+    to look."""
+    from graphpack.backbone.checks import CheckError, parse_checks
+
+    path = tmp_path / "checks.cypher"
+    path.write_text(
+        "// Articles with no outlet\n"
+        "// which would be a broken backbone [must be empty]\n"
+        "MATCH (a:Article) RETURN a.id;\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CheckError, match="on a later comment line"):
+        parse_checks(path)
+
+
+def test_the_marker_on_the_title_line_still_makes_an_assertion(tmp_path):
+    from graphpack.backbone.checks import parse_checks
+
+    path = tmp_path / "checks.cypher"
+    path.write_text(
+        "// Articles with no outlet [must be empty]\n"
+        "//\n"
+        "// Commentary below the title is for the reader.\n"
+        "MATCH (a:Article) RETURN a.id;\n",
+        encoding="utf-8",
+    )
+
+    checks = parse_checks(path)
+
+    assert checks[0].must_be_empty is True
+    assert checks[0].title == "Articles with no outlet"

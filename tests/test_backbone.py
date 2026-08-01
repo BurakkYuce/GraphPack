@@ -247,3 +247,108 @@ def test_missing_data_file_says_what_to_run(neo4j_session, tmp_path):
 
     with pytest.raises(LoadError, match="backbone fetch"):
         load_backbone(neo4j_session, "_graphpack_test", sources, tmp_path / "data")
+
+
+# ----------------------------------------------------------------------
+# Deciding a property by vote
+# ----------------------------------------------------------------------
+
+
+def test_the_reading_most_mentions_agree_on_wins():
+    """A property read out of prose is read many times and not always well. Plain
+    MERGE is last-write-wins, so one bad sentence at the end of the corpus beats
+    a hundred good ones before it."""
+    from graphpack.backbone.load import _count_the_vote
+
+    rows = _count_the_vote(
+        {
+            "kanun:6356": [
+                {"title": "Sendikalar ve Toplu İş Sözleşmesi Kanun"},
+                {"title": "Sendikalar ve Toplu İş Sözleşmesi Kanun"},
+                {"title": "Kanun'un 2/3 hükmünde ... 4857 sayılı İş Kanun"},
+            ]
+        }
+    )
+
+    assert rows == [
+        {"id": "kanun:6356", "props": {"title": "Sendikalar ve Toplu İş Sözleşmesi Kanun"}}
+    ]
+
+
+def test_a_tie_goes_to_the_earliest_mention():
+    """Statutes are named in full the first time a decision cites them and by
+    number afterwards, so the earliest reading is the likeliest whole name."""
+    from graphpack.backbone.load import _count_the_vote
+
+    rows = _count_the_vote({"k": [{"title": "Deniz İş Kanun"}, {"title": "Kanun ile 4857"}]})
+
+    assert rows[0]["props"]["title"] == "Deniz İş Kanun"
+
+
+def test_each_property_is_counted_on_its_own():
+    """Two mentions of the same statute can each supply a different field, and a
+    row that is missing one should not vote against it."""
+    from graphpack.backbone.load import _count_the_vote
+
+    rows = _count_the_vote(
+        {"k": [{"title": "A", "kind": "law"}, {"title": "B"}, {"title": "A"}, {"kind": "code"}]}
+    )
+
+    assert rows[0]["props"] == {"title": "A", "kind": "law"}
+
+
+def test_voting_is_off_unless_a_step_asks_for_it():
+    """Most properties are stated once. Buffering every row costs memory, so a
+    step opts in."""
+    from graphpack.backbone.sources import LoadSpec
+
+    assert LoadSpec(source="x.jsonl").vote is False
+
+
+VOTING_SOURCES = textwrap.dedent(
+    """\
+    fetch:
+      - id: things
+        url: https://example.invalid/things.json
+        out: things.jsonl
+
+    load:
+      - source: things.jsonl
+        vote: true
+        node:
+          label: Thing
+          id: "t:{name}"
+          properties:
+            title: "{title}"
+    """
+)
+
+
+@pytest.mark.integration
+@pytest.mark.graph
+def test_a_voted_property_takes_the_reading_the_data_agrees_on(neo4j_session, pack_data):
+    """End to end, from the `vote: true` in the YAML to the value in the graph.
+
+    Three mentions of one thing, two agreeing. Without voting the last write
+    wins and the node is named "Kanun ile 4857 sayili Kanun" — which is how
+    statute 6356 came to be titled after statute 4857.
+    """
+    rows = [
+        {"name": "a", "title": "Deniz Is Kanunu"},
+        {"name": "a", "title": "Deniz Is Kanunu"},
+        {"name": "a", "title": "Kanun ile 4857 sayili Kanun"},
+    ]
+    sources, data_dir = pack_data(VOTING_SOURCES, rows)
+    pack = "_graphpack_test"
+    neo4j_session.run("MATCH (n {pack: $p}) DETACH DELETE n", p=pack)
+
+    try:
+        load_backbone(neo4j_session, pack, sources, data_dir)
+
+        row = neo4j_session.run(
+            "MATCH (n:Thing {pack: $p}) RETURN n.title AS title, count(*) AS n", p=pack
+        ).single()
+        assert row["title"] == "Deniz Is Kanunu"
+        assert row["n"] == 1, "three mentions of one identity are one node"
+    finally:
+        neo4j_session.run("MATCH (n {pack: $p}) DETACH DELETE n", p=pack)

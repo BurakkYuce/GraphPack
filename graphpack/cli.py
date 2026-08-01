@@ -888,6 +888,71 @@ def _resolver_for(session, pack):
     return ResolverIndex(session, pack.name, load_rules(path, pack.path("aliases.csv")))
 
 
+@app.command("viz")
+def viz_command(
+    pack: str = typer.Argument(..., help="Pack to ask."),
+    question: str = typer.Argument("", help="The question to replay."),
+    question_id: str = typer.Option(
+        "", "--id", help="Take the question from the pack's question set instead."
+    ),
+    out: str = typer.Option("trace.html", "--out", "-o", help="Where to write the page."),
+    no_llm: bool = typer.Option(
+        False, "--no-llm", help="Traverse only — no model writes the reply."
+    ),
+) -> None:
+    """Answer a question and write the run as a self-contained page.
+
+    One HTML file with everything inlined: no build step, no package manager, no
+    request to a CDN. It opens from disk, which is what makes it usable as a
+    screenshot or something to hand to somebody.
+
+    `--id` reads the question from `questions.jsonl`, so a demo in the README
+    cannot drift from the question the evaluation actually scores.
+    """
+    from pathlib import Path
+
+    from graphpack.agent import answer_question, load_retrieval_rules
+    from graphpack.agent.runner import load_questions
+    from graphpack.backbone import session_scope
+    from graphpack.viz import render_page, subgraph_for
+
+    loaded = load_pack(pack)
+
+    if bool(question) == bool(question_id):
+        raise typer.BadParameter("give either a question or --id, not both and not neither")
+    if question_id:
+        known = {q.id: q for q in load_questions(loaded.path("questions.jsonl"))}
+        if question_id not in known:
+            raise typer.BadParameter(
+                f"no question {question_id!r} in {pack} — have: {', '.join(sorted(known))}"
+            )
+        question = known[question_id].question
+
+    rules = load_retrieval_rules(loaded.path("retrieval.yaml"))
+
+    system = llm = None
+    if not no_llm:
+        from graphpack.packs.loader import build_system
+
+        system = build_system(loaded)
+        llm = system.llm
+
+    with session_scope() as session:
+        resolver = _resolver_for(session, loaded)
+        trace = answer_question(
+            session, loaded.name, question, rules, system=system, llm=llm, resolver=resolver
+        )
+        graph = subgraph_for(
+            session, loaded.name, trace.nodes_touched, traversed=trace.edges_touched
+        )
+
+    Path(out).write_text(render_page(trace, graph), encoding="utf-8")
+    console.print(
+        f"[green]Wrote {out}[/green] — {len(graph.nodes)} node(s), {len(graph.edges)} edge(s), "
+        f"{len(trace.events)} step(s)"
+    )
+
+
 def main() -> None:
     """Turn the expected failures into one-line messages.
 

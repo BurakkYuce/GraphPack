@@ -64,6 +64,9 @@ graphpack ingest PACK [-n N]        run the corpus through the engine
 graphpack inspect [PACK]            report what extraction wrote
 graphpack resolve PACK              link mentions to canonical identifiers
 graphpack validate-triples PACK     check relations against the ontology
+graphpack ask PACK QUESTION         answer by walking the graph
+graphpack ask-all PACK              run the pack's whole question set
+graphpack viz PACK --id ID          write the run as a self-contained page
 graphpack doctor                    check models and services are reachable
 ```
 
@@ -147,6 +150,23 @@ Ids are templates, so the identifier scheme is a pack decision. `{a,b|slug}`
 takes the first field that survives normalising. Uniqueness constraints are
 derived from the labels a pack declares — no pack ships a migration.
 
+A step may add `vote: true`, which holds its rows back and writes the value each
+identity's mentions most agreed on:
+
+```yaml
+  - source: decisions.jsonl
+    explode: {field: text, pattern: "(?P<statute>\\d{3,4})\\s*sayılı\\s+(?P<title>...)"}
+    vote: true                       # the reading most decisions agree on
+    node: {label: Statute, id: "kanun:{statute}", properties: {title: "{title}"}}
+```
+
+Use it where a property is recovered from repeated mentions rather than stated
+once. MERGE is otherwise last-write-wins, so one bad reading at the end of the
+corpus beats every good one before it: statute 6356's title was a sentence
+fragment that happened to contain "4857 sayılı İş Kanun", which put another
+statute's number into the text the resolver fuzzy-matches on. Ties go to the
+earliest mention. Voting buffers the step's rows in memory, so it is opt-in.
+
 The same file also says what becomes prose for the engine to extract from:
 
 ```yaml
@@ -223,6 +243,43 @@ Note that `rdfs:domain`/`rdfs:range` do **not** constrain extraction: the engine
 never forwards triple constraints to the extractor. GraphPack derives them and
 enforces them in its own resolution pass. See
 [docs/ENGINE.md](docs/ENGINE.md).
+
+## Seeing a run
+
+`graphpack viz` answers a question and writes the run as one HTML file — layout,
+styling and data inlined, nothing fetched. It opens from disk.
+
+```bash
+uv run graphpack viz oss --id blast-urllib3 -o run.html
+uv run graphpack viz tr-law --id cocited-4857 -o run.html
+uv run graphpack viz oss "What would break if urllib3 broke?" -o run.html
+```
+
+`--id` reads the question from the pack's `questions.jsonl`, so a demo cannot
+drift from the question the evaluation scores. Both pages below are committed
+under [docs/demo/](docs/demo/) and open without a server.
+
+**oss — what breaks if urllib3 breaks** ([page](docs/demo/oss-blast-radius.html))
+
+![oss blast radius](docs/demo/oss-blast-radius.jpg)
+
+Sixty packages over two hops. The subject keeps a ring and a label at every
+step; the rest are labelled only when few enough to read.
+
+**tr-law — statutes cited alongside 4857** ([page](docs/demo/tr-law-co-cited.html))
+
+![tr-law co-cited statutes](docs/demo/tr-law-co-cited.jpg)
+
+Every line here is **dashed**, which means the run derived the relation rather
+than reading it. "Co-cited with 4857" is two `CITES` hops through a decision
+that is not in the result, so nothing in the database joins these statutes
+directly. Drawing them like stored edges would claim the graph holds something
+it does not; drawing only stored edges left the answer as twenty-six
+unconnected dots. A derived line is added only where the stored edges cannot
+already connect the pair — which is why the oss picture, whose packages reach
+each other through real dependency edges, has none.
+
+Clicking a step lights what that step touched. `Replay` walks them in order.
 
 ## Testing
 

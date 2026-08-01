@@ -157,6 +157,7 @@ def _run_step(
     label = spec.describes
     batch: list[dict[str, Any]] = []
     written = created = skipped = sent = 0
+    ballot: dict[str, list[dict[str, Any]]] = {}
 
     def _flush(rows: list[dict[str, Any]]) -> tuple[int, int]:
         return _write(session, pack_name, spec, rows)
@@ -170,6 +171,11 @@ def _run_step(
         if rendered is None:
             skipped += 1
             continue
+        if spec.vote:
+            # Held back rather than written: the winner is not known until every
+            # mention has been read.
+            ballot.setdefault(rendered["id"], []).append(rendered["props"])
+            continue
         batch.append(rendered)
         if len(batch) >= BATCH_SIZE:
             sent += len(batch)
@@ -177,6 +183,9 @@ def _run_step(
             written += matched
             created += new
             batch = []
+
+    if spec.vote:
+        batch = _count_the_vote(ballot)
 
     if batch:
         sent += len(batch)
@@ -196,6 +205,25 @@ def _run_step(
         skipped,
         sent - written,
     )
+
+
+def _count_the_vote(ballot: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """One row per id, each property set to the value most mentions agreed on.
+
+    Counted per property rather than per row, because two mentions of the same
+    statute can each supply a different field. Ties go to the value seen first,
+    which is the earliest mention — statutes are named in full the first time a
+    decision cites them and by number afterwards, so the earliest reading is the
+    likeliest to be the whole name.
+    """
+    rows = []
+    for identity, seen in ballot.items():
+        winners: dict[str, Any] = {}
+        for key in dict.fromkeys(k for props in seen for k in props):
+            counts = Counter(props[key] for props in seen if key in props)
+            winners[key] = counts.most_common(1)[0][0]
+        rows.append({"id": identity, "props": winners})
+    return rows
 
 
 def _rows(source_path: Path, spec: LoadSpec) -> Iterator[dict[str, Any]]:

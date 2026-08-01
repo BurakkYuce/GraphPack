@@ -92,3 +92,38 @@ run rather than letting the omission pass for coverage.
 **4.6% of decisions cite no statute at all** — 73 of 1,578. Consistent with the
 5.3% measured on a sample before the pack was written. Mostly short procedural
 rulings.
+
+## Statute titles are decided by vote
+
+A statute's title is read out of the decisions that cite it, with a pattern that
+takes the words between "N sayılı" and "Kanun". A sentence can carry a second
+statute along with it, and one decision spelled 6356's name as
+
+> …6356 sayılı **Kanun'un 2/3 hükmünde işyeri kavramı yönünden 4857 sayılı İş
+> Kanun**…
+
+MERGE is last-write-wins, so that one reading became 6356's title even though
+the correct name — "Sendikalar ve Toplu İş Sözleşmesi Kanunu" — appears first in
+the corpus and far more often. It also put "4857" inside the text the resolver
+fuzzy-matches on, and 4857 has no title of its own, so a question naming the
+Labour Act by name had nothing but a rival statute's polluted title to match
+against.
+
+The title step declares `vote: true`. Of 69 statutes, 42 have a title; the vote
+corrected two, both of which had been carrying another statute's number:
+
+| statute | before | after |
+|---|---|---|
+| 6356 | `Kanun'un 2/3 hükmünde … 4857 sayılı İş Kanun` | `Sendikalar ve Toplu İş Sözleşmesi Kanun` |
+| 854 | `Kanun ile 4857 sayılı Kanun` | `Deniz İş Kanun` |
+
+Afterwards `İş Kanununa dayanan kararlar` resolves to `kanun:4857` and
+`kanun:6552` — 6552 is "İş Kanunu ile Bazı Kanun", which genuinely begins with
+that name. It no longer reaches 6356.
+
+Nine titles are still sentence fragments (375, 966, 4688, 5521, 6360, 6452,
+6764, 7226, 7251). None of them carries another statute's number, so none is a
+resolution hazard; they are cosmetic, and the pattern rather than the vote is
+what would have to change. Titles end in "Kanun" rather than "Kanunu" because
+the pattern stops at the stem — consistent, and matching is done on normalised
+forms.

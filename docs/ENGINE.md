@@ -129,6 +129,28 @@ Measured together, on llama3.1:8b, M4, 16 GB, one 150-character chunk:
 **Neo4j is Community edition**, which supports exactly one database. Packs share
 `neo4j` and are separated by a `pack` property on every node.
 
+**Extraction writes nothing until it finishes.** The transformation pipeline runs
+every extractor over every chunk and the store upsert happens after, so an ingest
+is all-or-nothing. Measured mid-run: 310 of 611 chunks extracted, 5 hours 39
+minutes elapsed, and the database contained zero `Chunk` nodes — the whole graph
+was still the backbone.
+
+```cypher
+MATCH (n) RETURN n.pack AS pack, count(*) ORDER BY count(*) DESC
+// oss 2768, tr-law 1823, null 4   ← all backbone; no chunk, no __Entity__
+```
+
+Two consequences, neither worked around:
+
+- **A crash at chunk 600 of 611 costs the entire run.** On this hardware that is
+  nine hours. Nothing here checkpoints, and adding checkpointing would mean
+  changing the engine. The mitigation available to a pack is a smaller
+  `--sample`: several short runs survive an interruption that one long run does
+  not, and the results are comparable because `--seed` makes the selection
+  reproducible.
+- **Progress cannot be measured from the graph.** Counting nodes mid-ingest
+  reports zero and means nothing. Read the extraction counter instead.
+
 ## Updating the pin
 
 Bumping `ENGINE_REF` in `.github/workflows/ci.yml` (and the note in

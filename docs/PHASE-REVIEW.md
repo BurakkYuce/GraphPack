@@ -59,6 +59,14 @@ Deviations from the plan get recorded with the reason. Three so far: constraints
 derived from pack declarations instead of per-pack migrations, `RESOLVED_AS`
 edges instead of separate `(:Mention)` nodes, and no BigQuery.
 
+A round can find a defect that belongs to an earlier phase, and the visualisation
+round did: drawing tr-law's statutes put their titles on screen for the first
+time, and two of them were sentence fragments carrying another statute's number.
+Nothing in the test suite could have caught it — every test passed, all eleven
+questions routed and resolved, and the graph was self-consistently wrong. Making
+data visible is itself a check, and it is worth doing before the numbers are
+taken rather than after.
+
 ## 6. Decide what the next phase inherits
 
 - Is anything half-built that the next phase will assume is finished?

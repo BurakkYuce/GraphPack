@@ -104,6 +104,14 @@ load:
     explode:
       field: text
       pattern: "(?<!\\d)(?P<statute>\\d{3,4})(?!\\d)\\s*sayılı\\s+(?P<title>[A-ZÇĞİÖŞÜ][^.,;:()\\n]{4,70}?Kanun)\\w*"
+    # Decided by vote. The pattern reads a title out of a sentence, and a
+    # sentence can carry a second statute along with it: one decision spelled
+    # 6356's name as "Kanun'un 2/3 hükmünde ... 4857 sayılı İş Kanun", which
+    # last-write-wins then made 6356's title. It also put "4857" inside the text
+    # the resolver fuzzy-matches on, which is how a question about the Labour
+    # Act could have resolved to the Trade Unions Act. Most decisions cite it
+    # correctly, and the majority is right.
+    vote: true
     node:
       label: Statute
       id: "kanun:{statute|bare_number}"

@@ -132,6 +132,14 @@ class LoadSpec:
     #: Field path, or ``{field, pattern}`` to explode a text field by regex.
     explode: str | dict[str, str] | None = None
     where: dict[str, dict[str, str]] = field(default_factory=dict)
+    #: Take the most common value for each property instead of the last one.
+    #: A property read out of prose is read many times and not always well: the
+    #: correct title of statute 6356 is in the corpus, appears first, and was
+    #: then overwritten by a sentence fragment from a later decision. Ordinary
+    #: MERGE is last-write-wins, which lets the worst reading win. Where a value
+    #: is recovered from repeated mentions rather than stated once, the reading
+    #: most decisions agree on is the one to keep.
+    vote: bool = False
 
     @property
     def describes(self) -> str:
@@ -377,6 +385,7 @@ def _parse_load(item: Any, path: Path, index: int) -> LoadSpec:
         edge=edge,
         explode=_explode(item.get("explode"), where),
         where=_conditions(item.get("where"), where),
+        vote=bool(item.get("vote", False)),
     )
 
 

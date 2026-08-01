@@ -84,6 +84,21 @@ class Trace:
                     seen.append(node)
         return seen
 
+    @property
+    def edges_touched(self) -> list[tuple[str, str, str]]:
+        """Every relation the run used, in order, without repeats.
+
+        Not all of these are edges the graph holds: an intent that reaches
+        across two hops reports the derived relation, and the pair it relates
+        may have nothing between them in the database.
+        """
+        seen: list[tuple[str, str, str]] = []
+        for event in self.events:
+            for edge in event.edge_ids:
+                if edge not in seen:
+                    seen.append(edge)
+        return seen
+
 
 class Recorder:
     """Collects events and times them.

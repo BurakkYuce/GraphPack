@@ -88,6 +88,17 @@ MINIMAL_RESOLVE = textwrap.dedent(
     """
 )
 
+MINIMAL_EVAL = textwrap.dedent(
+    """\
+    tasks:
+      - name: built_in
+        generator: backbone_edges
+        relation: BUILT_IN
+        endpoint_label: Widget
+    holdout: 0.0
+    """
+)
+
 
 @pytest.fixture
 def pack_dir(tmp_path: Path):
@@ -103,6 +114,7 @@ def pack_dir(tmp_path: Path):
         ontology: str | None = None,
         sources: str | None = None,
         resolve: str | None = None,
+        evaluation: str | None = None,
     ):
         root = domains / name
         root.mkdir(parents=True, exist_ok=True)
@@ -118,6 +130,9 @@ def pack_dir(tmp_path: Path):
         )
         (root / "resolve.yaml").write_text(
             MINIMAL_RESOLVE if resolve is None else resolve, encoding="utf-8"
+        )
+        (root / "eval.yaml").write_text(
+            MINIMAL_EVAL if evaluation is None else evaluation, encoding="utf-8"
         )
         return root
 

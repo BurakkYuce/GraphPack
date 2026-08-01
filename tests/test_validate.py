@@ -28,7 +28,7 @@ def test_valid_pack_passes_with_notes_for_later_phases(domains):
     assert "backbone: 1 fetch, 1 load" in result.summary
     assert "resolve: 1 rule" in result.summary
     # Files belonging to phases that have not landed are notes, not failures.
-    assert any("eval.yaml" in w for w in result.warnings)
+    assert any("retrieval.yaml" in w for w in result.warnings)
 
 
 def test_an_entity_type_with_no_resolve_rule_is_a_note(domains):

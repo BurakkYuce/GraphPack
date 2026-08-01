@@ -671,6 +671,74 @@ def validate_triples_command(
         )
 
 
+@app.command("eval")
+def eval_command(
+    pack: str = typer.Argument(..., help="Pack to evaluate."),
+    examples: int = typer.Option(8, "--examples", help="How many errors of each kind to print."),
+) -> None:
+    """Score extraction against ground truth the corpus carries itself.
+
+    Nobody annotated anything: the backbone was built from published metadata,
+    so for any two entities a document mentions, whether they are related is
+    already established independently of the model.
+    """
+    from graphpack.backbone import session_scope
+    from graphpack.eval import load_eval_rules, run_eval
+
+    loaded = load_pack(pack)
+    rules = load_eval_rules(loaded.path("eval.yaml"))
+
+    with session_scope() as session:
+        report = run_eval(session, loaded.name, rules, example_limit=max(examples, 10))
+
+    if not report.results:
+        console.print("[yellow]No task produced a score.[/yellow]")
+        raise typer.Exit(code=1)
+
+    for result in report.results:
+        scores, diagnostics = result.scores, result.diagnostics
+        console.print(f"\n[bold]{result.task.describes}[/bold]")
+
+        if not scores.gold:
+            console.print(
+                "[yellow]No gold edges.[/yellow] Either no document mentions two related "
+                "entities, or resolution linked too few mentions to find any pair."
+            )
+            console.print(f"  [dim]{diagnostics}[/dim]")
+            continue
+
+        console.print("  " + scores.line("micro"))
+        console.print(
+            f"  [dim]{diagnostics['documents_carrying_gold']} of "
+            f"{diagnostics['documents_with_resolved_entities']} documents carried gold; "
+            f"backbone holds {diagnostics['backbone_edges']:,} edges[/dim]"
+        )
+
+        if result.misses:
+            table = Table("where the misses come from", "sampled")
+            for cause, count in sorted(result.misses.items(), key=lambda kv: -kv[1]):
+                table.add_row(cause, str(count))
+            console.print(table)
+            for cause, details in result.miss_examples.items():
+                for detail in details[:examples]:
+                    console.print(f"    [dim]{cause}: {detail}[/dim]")
+
+        spurious = scores.examples.get("false_positive", [])[:examples]
+        if spurious:
+            console.print("\n  [bold]Claimed but not in the backbone[/bold]")
+            console.print(
+                '  [dim]Not all of these are wrong. A thread saying "we vendored X" states a '
+                "real dependency that no metadata field records.[/dim]"
+            )
+            for start, end in spurious:
+                console.print(f"    {start} -> {end}")
+
+    if report.documents_held_out:
+        console.print(
+            f"\n[dim]Scored on a held-out {report.documents_held_out}-subject slice.[/dim]"
+        )
+
+
 def main() -> None:
     """Turn the expected failures into one-line messages.
 
@@ -682,6 +750,7 @@ def main() -> None:
     from graphpack.backbone.checks import CheckError
     from graphpack.backbone.normalize import NormalizeError
     from graphpack.corpus import CorpusError
+    from graphpack.eval import EvalError
     from graphpack.ingest import IngestError
     from graphpack.migrations import MigrationError
 
@@ -690,6 +759,7 @@ def main() -> None:
     except (
         CheckError,
         CorpusError,
+        EvalError,
         FetchError,
         IngestError,
         LoadError,

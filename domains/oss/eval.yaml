@@ -1,0 +1,33 @@
+# Ground truth without annotation.
+#
+# Nobody labelled this corpus and nobody will. The backbone was built from
+# metadata the index publishes, so for any two packages a thread mentions, the
+# answer to "does one depend on the other" already exists — independently of
+# anything the model did. That is the gold.
+#
+# The same trick carries to a domain with no annotated corpus of its own, which
+# is the point: a court decision that cites another states the citation in its
+# own text. Different generator, same bargain.
+
+tasks:
+  - name: dependencies
+    generator: backbone_edges
+    # The extracted relation being scored, as the ontology names it.
+    relation: DEPENDS_ON
+    # The backbone relation the gold comes from. Same name here; they can differ
+    # when a pack's ontology and its structured source word things differently.
+    backbone_relation: DEPENDS_ON
+    endpoint_label: Package
+    # Direction is judged. "A depends on B" and "B depends on A" are different
+    # claims, and getting them backwards is a real error rather than a near miss.
+    directed: true
+
+# Nothing held out, for now, and the reason matters. A holdout protects against
+# rules fitted to the data being scored. No rule has been: the alias table was
+# written from import names anyone would list, not from these documents' errors.
+#
+# That changes the moment the error analysis feeds back into aliases.csv or a
+# normaliser — which is exactly what phase 4 is for. Set this to 0.3 before the
+# first such change, and say in the report which numbers came from which side.
+holdout: 0.0
+seed: 0

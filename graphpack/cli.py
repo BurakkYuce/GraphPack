@@ -739,6 +739,155 @@ def eval_command(
         )
 
 
+@app.command("ask")
+def ask_command(
+    pack: str = typer.Argument(..., help="Pack to ask."),
+    question: str = typer.Argument(..., help="The question."),
+    no_llm: bool = typer.Option(
+        False, "--no-llm", help="Traverse and report, without asking a model to write the reply."
+    ),
+    trace_path: str | None = typer.Option(
+        None, "--trace", help="Write the run's trace to this file as JSON."
+    ),
+) -> None:
+    """Answer a question by walking the graph, then reading the corpus.
+
+    Hybrid search answers from text that resembles the question. Some questions
+    have no such text — "what breaks if urllib3 breaks" is two hops of an edge
+    type — which is what the traversal is for.
+    """
+    from pathlib import Path
+
+    from graphpack.agent import answer_question, load_retrieval_rules
+    from graphpack.backbone import session_scope
+
+    loaded = load_pack(pack)
+    rules = load_retrieval_rules(loaded.path("retrieval.yaml"))
+
+    system = llm = None
+    if not no_llm:
+        from graphpack.packs.loader import build_system
+
+        system = build_system(loaded)
+        llm = system.llm
+
+    with session_scope() as session:
+        resolver = _resolver_for(session, loaded)
+        trace = answer_question(
+            session, loaded.name, question, rules, system=system, llm=llm, resolver=resolver
+        )
+
+    for event in trace.events:
+        console.print(
+            f"[dim]{event.duration_ms:>6}ms[/dim]  [bold]{event.step:<9}[/bold] "
+            f"[dim]{event.tool:<9}[/dim] {event.summary}"
+        )
+    console.print(f"\n{trace.answer}\n")
+    if trace.cited_ids:
+        console.print(f"[dim]resting on: {', '.join(trace.cited_ids[:12])}[/dim]")
+
+    if trace_path:
+        Path(trace_path).write_text(trace.to_json(), encoding="utf-8")
+        console.print(f"[dim]trace written to {trace_path}[/dim]")
+
+
+@app.command("ask-all")
+def ask_all_command(
+    pack: str = typer.Argument(..., help="Pack whose question set to run."),
+    no_llm: bool = typer.Option(
+        False, "--no-llm", help="Traverse only — no model, and no retrieval comparison."
+    ),
+    traces: str | None = typer.Option(
+        None, "--traces", help="Directory to write one trace JSON per question."
+    ),
+) -> None:
+    """Run the pack's questions.jsonl and report what the traversal added.
+
+    The claim is narrow: for a question whose answer is a path, hybrid search
+    has no passage to find. This reports, per question, which entities the graph
+    produced that retrieval did not.
+    """
+    from pathlib import Path
+
+    from graphpack.agent import load_retrieval_rules
+    from graphpack.agent.runner import load_questions, run_questions
+    from graphpack.backbone import session_scope
+
+    loaded = load_pack(pack)
+    rules = load_retrieval_rules(loaded.path("retrieval.yaml"))
+    questions = load_questions(loaded.path("questions.jsonl"))
+
+    system = llm = None
+    if not no_llm:
+        from graphpack.packs.loader import build_system
+
+        system = build_system(loaded)
+        llm = system.llm
+
+    with session_scope() as session:
+        resolver = _resolver_for(session, loaded)
+        report = run_questions(
+            session, loaded.name, questions, rules, system=system, llm=llm, resolver=resolver
+        )
+
+    table = Table("question", "routed to", "found it", "entities", "graph-only", "unverified")
+    for answered in report.answers:
+        table.add_row(
+            answered.question.id,
+            answered.routed_to or "[dim]—[/dim]",
+            "[green]yes[/green]" if answered.found_its_entity else "[yellow]no[/yellow]",
+            str(len(answered.trace.cited_ids)),
+            str(len(answered.only_from_graph)) if system else "[dim]n/a[/dim]",
+            f"[red]{len(answered.unverifiable)}[/red]" if answered.unverifiable else "0",
+        )
+    console.print(table)
+
+    total = len(report.answers)
+    gained, multi = report.multi_hop_gain
+    console.print(
+        f"\nrouted correctly {report.routed}/{total}   "
+        f"reached its entity {report.found}/{total}   "
+        f"answers citing something the graph lacks: {report.hallucinated}"
+    )
+    if system:
+        console.print(
+            f"multi-hop questions where the traversal reached entities retrieval did not: "
+            f"[bold]{gained}/{multi}[/bold]"
+        )
+    else:
+        console.print(
+            "[dim]--no-llm: no retrieval to compare against. The traversal half is what ran.[/dim]"
+        )
+
+    if traces:
+        directory = Path(traces)
+        directory.mkdir(parents=True, exist_ok=True)
+        for answered in report.answers:
+            (directory / f"{answered.question.id}.json").write_text(
+                answered.trace.to_json(), encoding="utf-8"
+            )
+        console.print(f"[dim]{total} trace(s) written to {directory}[/dim]")
+
+    if report.hallucinated:
+        raise typer.Exit(code=1)
+
+
+def _resolver_for(session, pack):
+    """The pack's resolution rules with the backbone indexed, or None.
+
+    A question names entities the way prose does. Resolution already knows how
+    to turn that into an identifier, so the agent borrows it instead of teaching
+    its lookup query the same abbreviations twice.
+    """
+    from graphpack.agent.tools import ResolverIndex
+    from graphpack.resolve import load_rules
+
+    path = pack.path("resolve.yaml")
+    if not path.is_file():
+        return None
+    return ResolverIndex(session, pack.name, load_rules(path, pack.path("aliases.csv")))
+
+
 def main() -> None:
     """Turn the expected failures into one-line messages.
 
@@ -746,6 +895,7 @@ def main() -> None:
     outcomes of running a command, not defects — a traceback for those buries
     the sentence that says what to do.
     """
+    from graphpack.agent import RetrievalError
     from graphpack.backbone import FetchError, LoadError, SourcesError
     from graphpack.backbone.checks import CheckError
     from graphpack.backbone.normalize import NormalizeError
@@ -766,6 +916,7 @@ def main() -> None:
         MigrationError,
         NormalizeError,
         OntologyError,
+        RetrievalError,
         PackError,
         SourcesError,
     ) as exc:

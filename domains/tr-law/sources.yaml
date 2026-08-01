@@ -95,6 +95,21 @@ load:
       properties:
         number: "{statute|bare_number}"
 
+  # The title, where the citation spells it out. Statutes are named in full the
+  # first time a decision mentions them and by number or abbreviation after
+  # that, so the full form has to be picked up wherever it appears. Without it
+  # the graph knows 6356 and nothing else, and a question saying "Sendikalar
+  # Kanunu" has nothing to match against.
+  - source: decisions.jsonl
+    explode:
+      field: text
+      pattern: "(?<!\\d)(?P<statute>\\d{3,4})(?!\\d)\\s*sayılı\\s+(?P<title>[A-ZÇĞİÖŞÜ][^.,;:()\\n]{4,70}?Kanun)\\w*"
+    node:
+      label: Statute
+      id: "kanun:{statute|bare_number}"
+      properties:
+        title: "{title}"
+
   - source: decisions.jsonl
     explode:
       field: text

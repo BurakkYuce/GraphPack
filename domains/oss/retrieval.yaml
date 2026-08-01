@@ -1,0 +1,96 @@
+# What this pack knows how to be asked.
+#
+# Each intent is a question shape and the traversal that answers it. The point
+# of having them at all is that these answers are not in the text: no issue
+# thread contains a list of everything that breaks when urllib3 breaks. It is
+# two hops of an edge type, and only a graph can produce it.
+#
+# `match` is a list of the words the questions actually use. Matching them is
+# free and deterministic, so the model is only asked to route when none of them
+# appear — the routing step is otherwise the slowest and least predictable part
+# of the loop.
+
+# How a name in a question becomes a node. Tries the canonical identifier, the
+# package name, and the name with PEP 503 normalisation applied, because a
+# question says "typing_extensions" as readily as "typing-extensions".
+lookup: |
+  MATCH (n {pack: $pack})
+  WHERE n.id = $needle
+     OR toLower(toString(coalesce(n.name, ''))) = toLower($needle)
+     OR n.id = 'pypi:' + toLower(replace(replace($needle, '_', '-'), '.', '-'))
+  RETURN n.id AS id, coalesce(n.name, n.id) AS name, labels(n)[0] AS label
+  LIMIT $limit
+
+intents:
+  - name: blast_radius
+    description: >
+      What would break if this package broke — everything that depends on it,
+      directly or through another package.
+    entity: PACKAGE
+    # "depends on" is deliberately absent: "X depends on Y" is a dependencies
+    # question and "what depends on X" is this one, and the shared phrase made
+    # the router pick whichever intent happened to be declared first.
+    match: ["break", "broke", "affected", "impact", "blast", "what depends on",
+            "who depends on", "dependent", "who uses", "kırılsa", "etkilen"]
+    hops: 2
+    limit: 60
+    cypher: |
+      MATCH (d:Package {pack: $pack})-[:DEPENDS_ON*1..{hops}]->(p:Package {pack: $pack})
+      WHERE p.id = $entity_id AND d.id <> $entity_id
+      RETURN DISTINCT d.id AS id, d.name AS name, 'DEPENDS_ON' AS via
+      LIMIT {limit}
+
+  - name: dependencies
+    description: What this package needs in order to work.
+    entity: PACKAGE
+    match: ["require", "need", "dependencies of", "what does", "depend on what"]
+    hops: 1
+    limit: 40
+    cypher: |
+      MATCH (p:Package {pack: $pack})-[:DEPENDS_ON]->(d:Package {pack: $pack})
+      WHERE p.id = $entity_id
+      RETURN DISTINCT d.id AS id, d.name AS name, 'DEPENDS_ON' AS via
+      LIMIT {limit}
+
+  - name: shared_dependencies
+    description: >
+      Packages that depend on the same things this one does — the neighbours
+      that would be affected by the same upstream problem.
+    entity: PACKAGE
+    match: ["similar", "share", "in common", "same dependenc", "alongside", "neighbour", "neighbor"]
+    hops: 2
+    limit: 30
+    cypher: |
+      MATCH (p:Package {pack: $pack})-[:DEPENDS_ON]->(shared:Package)<-[:DEPENDS_ON]-(other:Package {pack: $pack})
+      WHERE p.id = $entity_id AND other.id <> $entity_id
+      RETURN other.id AS id, other.name AS name, count(shared) AS weight, 'SHARES' AS via
+      ORDER BY weight DESC
+      LIMIT {limit}
+
+  - name: discussion
+    description: >
+      Which issue threads mention this package. The one intent whose answer is
+      in the text rather than in the structure.
+    entity: PACKAGE
+    match: ["issue", "issues", "discussed", "reported", "thread", "complain", "bug"]
+    hops: 1
+    limit: 25
+    cypher: |
+      MATCH (c)-[:MENTIONS]->(e:`__Entity__` {pack: $pack})-[:RESOLVED_AS]->(p:Package {pack: $pack})
+      WHERE p.id = $entity_id AND c.ref_doc_id IS NOT NULL
+      RETURN DISTINCT c.ref_doc_id AS id, c.ref_doc_id AS name, 'MENTIONS' AS via
+      LIMIT {limit}
+
+  - name: repository
+    description: Where a package's source lives, and what else lives there.
+    entity: PACKAGE
+    match: ["repository", "repo", "source", "github", "hosted", "monorepo"]
+    hops: 1
+    limit: 25
+    cypher: |
+      MATCH (p:Package {pack: $pack})-[:HOSTED_IN]->(r:Repository {pack: $pack})
+      WHERE p.id = $entity_id
+      OPTIONAL MATCH (sibling:Package {pack: $pack})-[:HOSTED_IN]->(r)
+      RETURN DISTINCT coalesce(sibling.id, r.id) AS id,
+             coalesce(sibling.name, r.slug) AS name, 'HOSTED_IN' AS via
+      LIMIT {limit}

@@ -41,7 +41,7 @@ REQUIRED_BY_PHASE: dict[str, int] = {
 #: Highest phase whose artifacts must be present for validation to pass.
 #: Bumped as each phase lands, so a half-built pack fails loudly instead of
 #: silently skipping work.
-IMPLEMENTED_PHASE = 4
+IMPLEMENTED_PHASE = 6
 
 #: Pack names the engine intercepts before it ever looks at our schema list.
 #: ``Settings.get_active_schema`` short-circuits on these: "sample" returns the

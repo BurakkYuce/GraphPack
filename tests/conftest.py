@@ -88,6 +88,24 @@ MINIMAL_RESOLVE = textwrap.dedent(
     """
 )
 
+MINIMAL_RETRIEVAL = textwrap.dedent(
+    """\
+    lookup: |
+      MATCH (n {pack: $pack}) WHERE n.id = $needle
+      RETURN n.id AS id, n.name AS name LIMIT $limit
+
+    intents:
+      - name: built_in
+        description: Which factory built this widget.
+        entity: WIDGET
+        match: ["built", "factory"]
+        cypher: |
+          MATCH (w:Widget {pack: $pack})-[:BUILT_IN]->(f {pack: $pack})
+          WHERE w.id = $entity_id
+          RETURN f.id AS id LIMIT {limit}
+    """
+)
+
 MINIMAL_EVAL = textwrap.dedent(
     """\
     tasks:
@@ -115,6 +133,7 @@ def pack_dir(tmp_path: Path):
         sources: str | None = None,
         resolve: str | None = None,
         evaluation: str | None = None,
+        retrieval: str | None = None,
     ):
         root = domains / name
         root.mkdir(parents=True, exist_ok=True)
@@ -133,6 +152,9 @@ def pack_dir(tmp_path: Path):
         )
         (root / "eval.yaml").write_text(
             MINIMAL_EVAL if evaluation is None else evaluation, encoding="utf-8"
+        )
+        (root / "retrieval.yaml").write_text(
+            MINIMAL_RETRIEVAL if retrieval is None else retrieval, encoding="utf-8"
         )
         return root
 

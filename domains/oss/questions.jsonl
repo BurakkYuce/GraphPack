@@ -1,0 +1,12 @@
+{"id": "blast-urllib3", "question": "What would break if urllib3 broke?", "intent": "blast_radius", "entity": "pypi:urllib3", "multi_hop": true, "note": "The reference question for this pack. No issue thread lists this; it is two hops of DEPENDS_ON."}
+{"id": "blast-certifi", "question": "Which packages are affected if certifi has a problem?", "intent": "blast_radius", "entity": "pypi:certifi", "multi_hop": true}
+{"id": "blast-typing-ext", "question": "What depends on typing_extensions?", "intent": "blast_radius", "entity": "pypi:typing-extensions", "multi_hop": true, "note": "Written with an underscore on purpose — the lookup has to normalise it."}
+{"id": "deps-requests", "question": "What does requests require?", "intent": "dependencies", "entity": "pypi:requests", "multi_hop": false}
+{"id": "deps-boto3", "question": "What are the dependencies of boto3?", "intent": "dependencies", "entity": "pypi:boto3", "multi_hop": false}
+{"id": "shared-boto3", "question": "Which packages share dependencies with boto3?", "intent": "shared_dependencies", "entity": "pypi:boto3", "multi_hop": true}
+{"id": "shared-requests", "question": "What is similar to requests in what it depends on?", "intent": "shared_dependencies", "entity": "pypi:requests", "multi_hop": true}
+{"id": "repo-urllib3", "question": "Which repository hosts urllib3?", "intent": "repository", "entity": "pypi:urllib3", "multi_hop": false}
+{"id": "repo-monorepo", "question": "What other packages live in the same repository as google-cloud-storage?", "intent": "repository", "entity": "pypi:google-cloud-storage", "multi_hop": true, "note": "A monorepo: the answer is the siblings, not the repository."}
+{"id": "issues-urllib3", "question": "Which issues discuss urllib3?", "intent": "discussion", "entity": "pypi:urllib3", "multi_hop": false, "note": "The one question here whose answer is in the text rather than the structure. Needs an ingest to have run."}
+{"id": "issues-httpx", "question": "What bugs have been reported that mention httpx?", "intent": "discussion", "entity": "pypi:httpx", "multi_hop": false}
+{"id": "unknown-entity", "question": "What would break if nonexistent-package-xyz broke?", "intent": "blast_radius", "entity": null, "multi_hop": false, "note": "Names nothing the graph holds. The right answer is to say so."}

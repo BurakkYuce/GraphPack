@@ -1,0 +1,106 @@
+# Questions this pack knows how to be asked, in Turkish.
+#
+# The same file as the oss pack in structure and nothing else in content, which
+# is the point. The traversals answer legal questions — which decisions rely on
+# a statute, which decisions a decision descends from — and the phrases are the
+# ones a Turkish lawyer would actually type.
+#
+# The citation chain is the intent worth having. A decision cites another, which
+# cites a third; asking what a line of authority rests on is several hops, and
+# no single judgment states the chain.
+
+# A question names a statute by number ("4857"), by abbreviation ("HMK"), or a
+# decision by its case number ("2025/717"). All three are tried.
+#
+# Every property goes through toString() before toLower(). Cypher does not
+# guarantee the order it evaluates ANDed predicates in, so `MATCH (n {pack:
+# $pack})` does not stop `toLower(n.number)` being tried on a node from outside
+# the pack — the migration ledger keeps its number as an integer, and the query
+# died on it.
+lookup: |
+  MATCH (n {pack: $pack})
+  WHERE n.id = $needle
+     OR n.id = 'kanun:' + $needle
+     OR n.id = 'karar:' + $needle
+     OR toLower(toString(coalesce(n.number, ''))) = toLower($needle)
+     OR toLower(toString(coalesce(n.case_number, ''))) = toLower($needle)
+  RETURN n.id AS id,
+         toString(coalesce(n.number, n.case_number, n.id)) AS name,
+         labels(n)[0] AS label
+  LIMIT $limit
+
+intents:
+  - name: citing_decisions
+    description: >
+      Which decisions rely on this statute. The reverse of a citation: given a
+      law, find the case law applying it.
+    entity: STATUTE
+    match: ["atıf", "atif", "dayanan", "uygulayan", "hangi karar", "içtihat", "ictihat",
+            "cites", "citing", "case law"]
+    hops: 1
+    limit: 60
+    cypher: |
+      MATCH (d:Decision {pack: $pack})-[:CITES]->(k:Statute {pack: $pack})
+      WHERE k.id = $entity_id
+      RETURN DISTINCT d.id AS id, d.case_number AS name, 'CITES' AS via
+      LIMIT {limit}
+
+  - name: cited_statutes
+    description: Which statutes and articles a decision relies on.
+    entity: DECISION
+    match: ["dayandığı", "dayandigi", "hangi kanun", "hangi madde", "gerekçe", "gerekce",
+            "relies on", "based on"]
+    hops: 1
+    limit: 40
+    cypher: |
+      MATCH (d:Decision {pack: $pack})-[:CITES_ARTICLE|CITES]->(target {pack: $pack})
+      WHERE d.id = $entity_id
+      RETURN DISTINCT target.id AS id,
+             coalesce(target.number, target.article_number, target.id) AS name,
+             'CITES' AS via
+      LIMIT {limit}
+
+  - name: citation_chain
+    description: >
+      The line of authority a decision descends from — the decisions it cites,
+      and the decisions those cite in turn.
+    entity: DECISION
+    match: ["zincir", "silsile", "önceki karar", "onceki karar", "emsal", "dayanak karar",
+            "chain", "lineage", "precedent"]
+    hops: 3
+    limit: 40
+    cypher: |
+      MATCH (d:Decision {pack: $pack})-[:REFERS_TO*1..{hops}]->(cited:Decision {pack: $pack})
+      WHERE d.id = $entity_id AND cited.id <> $entity_id
+      RETURN DISTINCT cited.id AS id, cited.case_number AS name, 'REFERS_TO' AS via
+      LIMIT {limit}
+
+  - name: co_cited_statutes
+    description: >
+      Statutes that tend to be cited alongside this one — the neighbouring rules
+      a court reaches for in the same kind of dispute.
+    entity: STATUTE
+    match: ["birlikte", "beraber", "yanında", "yaninda", "ilişkili", "iliskili",
+            "together with", "alongside"]
+    hops: 2
+    limit: 25
+    cypher: |
+      MATCH (k:Statute {pack: $pack})<-[:CITES]-(d:Decision {pack: $pack})-[:CITES]->(other:Statute {pack: $pack})
+      WHERE k.id = $entity_id AND other.id <> $entity_id
+      RETURN other.id AS id, other.number AS name, count(d) AS weight, 'CO_CITED' AS via
+      ORDER BY weight DESC
+      LIMIT {limit}
+
+  - name: articles_of
+    description: Which articles of a statute the case law actually applies.
+    entity: STATUTE
+    match: ["madde", "maddeleri", "hangi maddesi", "article", "articles"]
+    hops: 1
+    limit: 40
+    cypher: |
+      MATCH (k:Statute {pack: $pack})-[:HAS_ARTICLE]->(m:Article {pack: $pack})
+      WHERE k.id = $entity_id
+      OPTIONAL MATCH (d:Decision {pack: $pack})-[:CITES_ARTICLE]->(m)
+      RETURN m.id AS id, m.article_number AS name, count(d) AS weight, 'HAS_ARTICLE' AS via
+      ORDER BY weight DESC
+      LIMIT {limit}

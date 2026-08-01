@@ -31,10 +31,14 @@ contract could say so — so the contract grew a knob. That is the shape the
 thesis predicts a new vertical should have: configuration for the domain, and
 occasionally one general capability the domain was the first to need.
 
-**Status:** phases 0–8 complete except phase 7's benchmark run. Three packs
-live; the `oss` corpus is extracted, resolved and measured — see
-[docs/RESULTS.md](docs/RESULTS.md), which reports what the numbers can and
-cannot support.
+**Status:** all phases run. Three packs live. MultiHop-RAG scores MRR@10 0.759
+over 2,255 queries; the oss extraction evaluation scores F1 22.2% over twenty
+gold edges and is reported as the weak measurement it is.
+
+- [docs/WRITEUP.md](docs/WRITEUP.md) — what the project claims, what it showed,
+  and where it is weak
+- [docs/RESULTS.md](docs/RESULTS.md) — every number, with the command that
+  produces it
 
 ## Quickstart
 

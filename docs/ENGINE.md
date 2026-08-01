@@ -129,27 +129,41 @@ Measured together, on llama3.1:8b, M4, 16 GB, one 150-character chunk:
 **Neo4j is Community edition**, which supports exactly one database. Packs share
 `neo4j` and are separated by a `pack` property on every node.
 
-**Extraction writes nothing until it finishes.** The transformation pipeline runs
-every extractor over every chunk and the store upsert happens after, so an ingest
-is all-or-nothing. Measured mid-run: 310 of 611 chunks extracted, 5 hours 39
-minutes elapsed, and the database contained zero `Chunk` nodes — the whole graph
-was still the backbone.
+**The graph half of an ingest is all-or-nothing; the vector half is not.** The
+two land at different times, and it matters because only one of them survives an
+interruption.
+
+Measured at 515 of 611 chunks extracted, 9 hours into a run:
 
 ```cypher
-MATCH (n) RETURN n.pack AS pack, count(*) ORDER BY count(*) DESC
-// oss 2768, tr-law 1823, null 4   ← all backbone; no chunk, no __Entity__
+MATCH (c:Chunk) RETURN count(c)        // 0
+MATCH (e:__Entity__) RETURN count(e)   // 0
+```
+```
+GET /collections/oss_chunks  ->  points_count: 1672   (steady over 150 s)
 ```
 
-Two consequences, neither worked around:
+So chunking and embedding complete first and write as they go; extraction then
+runs over every chunk and the property-graph upsert happens after all of it. An
+earlier version of this note said "extraction writes nothing until it finishes"
+and left the vector store out — measured at 310/611, when Neo4j was empty, that
+read as the whole pipeline being all-or-nothing. It is not.
 
-- **A crash at chunk 600 of 611 costs the entire run.** On this hardware that is
-  nine hours. Nothing here checkpoints, and adding checkpointing would mean
-  changing the engine. The mitigation available to a pack is a smaller
-  `--sample`: several short runs survive an interruption that one long run does
-  not, and the results are comparable because `--seed` makes the selection
-  reproducible.
+Three consequences, none worked around:
+
+- **A crash near the end costs the graph, not the embeddings.** Nine hours of
+  extraction is lost; the vectors are already in Qdrant and a re-run re-embeds
+  them for nothing but does not have to be avoided. Nothing here checkpoints,
+  and adding it would mean changing the engine. The mitigation available to a
+  pack is a smaller `--sample`: several short runs survive an interruption that
+  one long run does not, and `--seed` keeps the selections comparable.
 - **Progress cannot be measured from the graph.** Counting nodes mid-ingest
-  reports zero and means nothing. Read the extraction counter instead.
+  reports zero and means nothing.
+- **Nor from the vector store**, once embedding has finished — the count goes
+  steady while hours of extraction remain. The live meter is the model server's
+  own request log; on Ollama, one `/api/chat` completion is one chunk, which was
+  checked against the extraction counter (309 completions at the moment it
+  reported 310).
 
 ## Updating the pin
 

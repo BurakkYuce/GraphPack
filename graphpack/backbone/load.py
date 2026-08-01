@@ -23,7 +23,8 @@ from pathlib import Path
 from typing import Any
 
 from graphpack.backbone.fetch import read_jsonl
-from graphpack.backbone.normalize import field, render, render_parts
+from graphpack.backbone.normalize import render, render_parts
+from graphpack.backbone.rows import expand
 from graphpack.backbone.sources import EdgeSpec, LoadSpec, NodeSpec, Sources
 
 logger = logging.getLogger(__name__)
@@ -200,41 +201,12 @@ def _run_step(
 def _rows(source_path: Path, spec: LoadSpec) -> Iterator[dict[str, Any]]:
     """Yield the rows a step sees, after exploding and filtering.
 
-    ``explode`` turns one record with a collection field into several records,
-    each carrying one element as ``value``:
-
-    * a list yields one row per element — a package's dependency list becomes
-      individual edges;
-    * a mapping yields one row per entry, with the entry's name as ``key`` —
-      which is how a step can search every URL a record carries without the pack
-      having to enumerate the key names publishers actually use.
+    Delegates to the shared implementation so a ``where`` clause and an
+    ``explode`` behave identically wherever a pack writes them. This had its own
+    copy once, which then quietly failed to learn about exploding a text field
+    by pattern — the second pack's entire backbone.
     """
-    for row in read_jsonl(source_path):
-        candidates = [row]
-        if spec.explode:
-            values = field(row, spec.explode)
-            if isinstance(values, dict):
-                candidates = [{**row, "key": k, "value": v} for k, v in values.items()]
-            else:
-                if values is None:
-                    values = []
-                elif not isinstance(values, list):
-                    values = [values]
-                candidates = [{**row, "value": value} for value in values]
-        for candidate in candidates:
-            if _passes(candidate, spec):
-                yield candidate
-
-
-def _passes(row: dict[str, Any], spec: LoadSpec) -> bool:
-    for name, condition in spec.where.items():
-        value = field(row, name)
-        text = "" if value is None else str(value)
-        if "matches" in condition and not re.search(condition["matches"], text):
-            return False
-        if "not_matches" in condition and re.search(condition["not_matches"], text):
-            return False
-    return True
+    return expand(read_jsonl(source_path), spec)
 
 
 def _render_node(spec: NodeSpec, row: dict[str, Any], sources: Sources) -> dict[str, Any] | None:

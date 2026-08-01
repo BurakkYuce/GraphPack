@@ -1,0 +1,176 @@
+# A backbone assembled from prose.
+#
+# The oss pack was handed its backbone: the index publishes a dependency list
+# and loading it is bookkeeping. Nothing publishes a list of the statutes a
+# court decision relies on. The decision names them mid-sentence, in Turkish,
+# with case suffixes attached — "6100 sayılı Hukuk Muhakemeleri Kanunu'nun 369
+# uncu maddesi" — and the only way to a graph is to read them out.
+#
+# So this file does something the other one never has to: it derives structured
+# facts from text with patterns, before any model is involved. Those facts
+# become the ground truth that extraction is later measured against, which is
+# the whole trick — the corpus grades its own homework, and the marking scheme
+# is deterministic even though the thing being marked is not.
+#
+# Measured on 300 decisions before any of this was written: 94.7% cite at least
+# one statute by number, 85% name a statute and an article together, 7% cite
+# another decision. Those are the numbers this pack is built around.
+
+normalize:
+  # Statute and article numbers arrive with surrounding text and Turkish
+  # ordinal suffixes; the identifier is the bare number.
+  bare_number:
+    - strip
+    - {regex_extract: {pattern: "(\\d+)"}}
+
+  # Case and decision numbers are written "2025/717". Kept whole, with spaces
+  # around the slash removed — they are written both ways.
+  case_number:
+    - strip
+    - {regex_replace: {pattern: "\\s*/\\s*", replace: "/"}}
+    - {regex_extract: {pattern: "(\\d{4}/\\d+)"}}
+
+  # A chamber is named "T.C. Yargıtay Başkanlığı - 9. Hukuk Dairesi". The
+  # identifying part is the number and the kind.
+  chamber_slug:
+    - strip
+    - lower
+    - {regex_extract: {pattern: "(\\d+)\\s*\\.?\\s*(?:hukuk|ceza)"}}
+
+fetch:
+  # The dataset server pages at a hundred rows a request, so this is the first
+  # pack to need pagination. Rows arrive wrapped: {"rows": [{"row": {...}}]}.
+  - id: decisions
+    url: "https://datasets-server.huggingface.co/rows?dataset=aketen0654%2F9_yargitay_kararlari_2025&config=default&split=train&offset={offset}&length=100"
+    select: rows
+    paginate: {parameter: offset, step: 100, pages: 18}
+    out: decisions.jsonl
+    keep:
+      chamber: row.mahkeme_adi
+      case_number: row.esas_sayisi
+      decision_number: row.karar_sayisi
+      decided_on: row.karar_tarihi
+      subject: row.dava_konusu
+      text: row.yargitay_karari
+
+load:
+  # --- the decisions themselves, from the record's own fields ----------------
+  - source: decisions.jsonl
+    node:
+      label: Decision
+      id: "karar:{case_number|case_number}"
+      properties:
+        case_number: "{case_number|case_number}"
+        decision_number: "{decision_number|case_number}"
+        decided_on: "{decided_on}"
+        subject: "{subject}"
+
+  - source: decisions.jsonl
+    node:
+      label: Chamber
+      id: "daire:{chamber|chamber_slug}"
+      properties:
+        chamber_name: "{chamber}"
+
+  - source: decisions.jsonl
+    edge:
+      type: ISSUED_BY
+      from: "karar:{case_number|case_number}"
+      to: "daire:{chamber|chamber_slug}"
+
+  # --- statutes and articles, read out of the text --------------------------
+  #
+  # The article pattern is the load-bearing one and it is deliberately greedy
+  # about what sits between the statute number and the article: Turkish puts the
+  # statute's full name there, inflected. Bounded to one sentence so a statute
+  # named at the start of a paragraph does not capture an article number from
+  # the end of it.
+  - source: decisions.jsonl
+    explode:
+      field: text
+      pattern: "(?<!\\d)(?P<statute>\\d{3,4})(?!\\d)\\s*sayılı"
+    node:
+      label: Statute
+      id: "kanun:{statute|bare_number}"
+      properties:
+        number: "{statute|bare_number}"
+
+  - source: decisions.jsonl
+    explode:
+      field: text
+      pattern: "(?<!\\d)(?P<statute>\\d{3,4})(?!\\d)\\s*sayılı[^.]{0,80}?(?<!\\d)(?P<article>\\d{1,3})(?!\\d)\\s*(?:\\.|inci|nci|üncü|uncu|ıncı)?\\s*madde"
+    node:
+      label: Article
+      id: "madde:{statute|bare_number}/{article|bare_number}"
+      properties:
+        article_number: "{article|bare_number}"
+
+  - source: decisions.jsonl
+    explode:
+      field: text
+      pattern: "(?<!\\d)(?P<statute>\\d{3,4})(?!\\d)\\s*sayılı[^.]{0,80}?(?<!\\d)(?P<article>\\d{1,3})(?!\\d)\\s*(?:\\.|inci|nci|üncü|uncu|ıncı)?\\s*madde"
+    edge:
+      type: HAS_ARTICLE
+      from: "kanun:{statute|bare_number}"
+      to: "madde:{statute|bare_number}/{article|bare_number}"
+
+  # The citation edges. These are the gold: a decision that names a statute has
+  # said so in its own text, and no annotation was involved.
+  - source: decisions.jsonl
+    explode:
+      field: text
+      pattern: "(?<!\\d)(?P<statute>\\d{3,4})(?!\\d)\\s*sayılı"
+    edge:
+      type: CITES
+      from: "karar:{case_number|case_number}"
+      to: "kanun:{statute|bare_number}"
+
+  - source: decisions.jsonl
+    explode:
+      field: text
+      pattern: "(?<!\\d)(?P<statute>\\d{3,4})(?!\\d)\\s*sayılı[^.]{0,80}?(?<!\\d)(?P<article>\\d{1,3})(?!\\d)\\s*(?:\\.|inci|nci|üncü|uncu|ıncı)?\\s*madde"
+    edge:
+      type: CITES_ARTICLE
+      from: "karar:{case_number|case_number}"
+      to: "madde:{statute|bare_number}/{article|bare_number}"
+
+  # --- decisions citing decisions -------------------------------------------
+  #
+  # Only 7% of decisions do this, but the ones that do are the multi-hop
+  # questions worth asking. The cited decision becomes a node whether or not the
+  # corpus contains it; unlike a package outside the top thousand, a cited
+  # decision is fully identified by the citation itself.
+  - source: decisions.jsonl
+    explode:
+      field: text
+      pattern: "(?P<cited_case>\\d{4}\\s*/\\s*\\d+)\\s*(?:E\\.|Esas)[^0-9]{0,25}(?P<cited_decision>\\d{4}\\s*/\\s*\\d+)\\s*(?:K\\.|Karar)"
+    node:
+      label: Decision
+      id: "karar:{cited_case|case_number}"
+      properties:
+        case_number: "{cited_case|case_number}"
+        decision_number: "{cited_decision|case_number}"
+
+  - source: decisions.jsonl
+    explode:
+      field: text
+      pattern: "(?P<cited_case>\\d{4}\\s*/\\s*\\d+)\\s*(?:E\\.|Esas)[^0-9]{0,25}(?P<cited_decision>\\d{4}\\s*/\\s*\\d+)\\s*(?:K\\.|Karar)"
+    edge:
+      type: REFERS_TO
+      from: "karar:{case_number|case_number}"
+      to: "karar:{cited_case|case_number}"
+
+# The same texts, now as documents for the engine to read. Extraction will be
+# asked to find the citations that the patterns above already found — that
+# comparison is the evaluation.
+corpus:
+  - source: decisions.jsonl
+    id: "karar:{case_number|case_number}"
+    text: "{subject}\n\n{text}"
+    metadata:
+      case_number: "{case_number|case_number}"
+      decision_number: "{decision_number|case_number}"
+      chamber: "{chamber}"
+      decided_on: "{decided_on}"
+    where:
+      text: {matches: "\\S"}

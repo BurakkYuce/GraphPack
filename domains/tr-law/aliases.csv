@@ -1,0 +1,29 @@
+entity,surface,id,note
+# Abbreviations a decision uses once it has introduced a statute by its full
+# name. No string distance reaches these — "HMK" and "Hukuk Muhakemeleri
+# Kanunu" share almost no characters — which is why the table exists at all.
+#
+# The oss equivalent of this file holds import names, and there it is a small
+# convenience. Here it is load-bearing: Turkish legal writing abbreviates
+# constantly, and a resolver without these misses a large share of citations
+# outright.
+STATUTE,HMK,kanun:6100,Hukuk Muhakemeleri Kanunu — Code of Civil Procedure
+STATUTE,HUMK,kanun:1086,the repealed Code of Civil Procedure
+STATUTE,İş Kanunu,kanun:4857,Labour Law
+STATUTE,İş K.,kanun:4857,Labour Law
+STATUTE,TBK,kanun:6098,Türk Borçlar Kanunu — Code of Obligations
+STATUTE,BK,kanun:818,the repealed Code of Obligations
+STATUTE,TMK,kanun:4721,Türk Medeni Kanunu — Civil Code
+STATUTE,MK,kanun:4721,Civil Code
+STATUTE,TTK,kanun:6102,Türk Ticaret Kanunu — Commercial Code
+STATUTE,İİK,kanun:2004,İcra ve İflas Kanunu — Enforcement and Bankruptcy Law
+STATUTE,TCK,kanun:5237,Türk Ceza Kanunu — Criminal Code
+STATUTE,CMK,kanun:5271,Ceza Muhakemesi Kanunu — Criminal Procedure
+STATUTE,İYUK,kanun:2577,İdari Yargılama Usulü Kanunu — Administrative Procedure
+STATUTE,MÖHUK,kanun:5718,Milletlerarası Özel Hukuk — Private International Law
+STATUTE,STİSK,kanun:6356,Sendikalar ve Toplu İş Sözleşmesi Kanunu — Trade Unions
+STATUTE,SSGSSK,kanun:5510,Sosyal Sigortalar ve Genel Sağlık Sigortası Kanunu
+STATUTE,Anayasa,kanun:2709,the Constitution
+STATUTE,AY,kanun:2709,the Constitution
+STATUTE,Deniz İş Kanunu,kanun:854,maritime labour
+STATUTE,Basın İş Kanunu,kanun:5953,press labour

@@ -1,0 +1,43 @@
+# Citation masking: the decision states its own ground truth.
+#
+# The oss pack got its gold from an index that publishes dependency lists. There
+# is no such index here — nobody maintains a machine-readable record of which
+# statutes each decision relies on. But the decision says so itself, in the
+# text, and a pattern can read it out deterministically before any model runs.
+#
+# So the bargain is the same and the mechanism is different, which is the claim
+# being tested: the backbone was built from citations found by regex, and
+# extraction is now scored on whether an LLM reading the same text finds the
+# same citations. The patterns and the model see identical input and neither
+# sees the other's answer.
+#
+# What this can and cannot show. A citation the pattern missed is not in the
+# gold, so the model gets no credit for finding it — recall is measured against
+# what the patterns caught, not against what is there. Precision is the more
+# honest half: a citation the model claims and the pattern did not find is
+# either a real catch or an invention, and the report separates neither. Phase 4
+# says the same thing about the oss false positives, for the same reason.
+
+tasks:
+  - name: statute_citations
+    generator: backbone_edges
+    relation: CITES
+    backbone_relation: CITES
+    endpoint_label: Statute
+    # A decision citing a statute is directed by nature: statutes do not cite
+    # decisions.
+    directed: true
+
+  - name: article_citations
+    generator: backbone_edges
+    relation: CITES_ARTICLE
+    backbone_relation: CITES_ARTICLE
+    endpoint_label: Article
+    directed: true
+
+# Nothing withheld yet, for the same reason as the oss pack: no rule here has
+# been fitted to these decisions. The alias table holds abbreviations any
+# Turkish lawyer would list without reading a single one of them. That stops
+# being true the moment an entry is added because the error report suggested it.
+holdout: 0.0
+seed: 0

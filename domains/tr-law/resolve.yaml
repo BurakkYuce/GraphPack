@@ -1,0 +1,106 @@
+# The hard half of the thesis.
+#
+# In the oss pack `exact` carries almost everything: a Python package written in
+# a sentence usually *is* the package name, and the pipeline is three string
+# operations. Nothing here works like that.
+#
+# A statute is named a dozen ways in the same paragraph — by number, by full
+# title, by an abbreviation, or as "the aforementioned Law" once it has been
+# introduced. Turkish attaches case suffixes to whatever is being cited, so the
+# surface form changes with the grammar of the sentence: Kanun, Kanun'un,
+# Kanunda, Kanuna. And where the oss backbone was published metadata, this one
+# was itself read out of the text, so both sides of the join are inferred.
+#
+# The point of the pair is the two method distributions side by side. If they
+# come out looking similar, either the domains are not as different as claimed
+# or the measurement is not measuring anything.
+
+normalize:
+  # Whatever surrounds it, a statute is identified by its number. This is the
+  # one thing in the domain that behaves like a package name.
+  statute_number:
+    - strip
+    - {regex_extract: {pattern: "(\\d{3,4})"}}
+
+  # An article citation names a statute and an article. Both have to be present:
+  # "369. madde" on its own belongs to whichever statute the paragraph was
+  # discussing, and that is not something a pattern can recover.
+  article_ref:
+    - strip
+    - {regex_replace: {pattern: "\\s+", replace: " "}}
+    - {regex_extract: {pattern: "(\\d{3,4})\\s*sayılı[^.]{0,80}?\\d+"}}
+    - {regex_replace: {pattern: "\\s*sayılı.*?(?=\\d+$)", replace: "/"}}
+
+  # Case and decision numbers, written 2025/717 or 2025 / 717.
+  case_number:
+    - strip
+    - {regex_replace: {pattern: "\\s*/\\s*", replace: "/"}}
+    - {regex_extract: {pattern: "(\\d{4}/\\d+)"}}
+
+  # Titles as a decision writes them, for fuzzy comparison. Turkish case
+  # suffixes are stripped from the end of the last word — "Kanunu'nun" and
+  # "Kanunda" both reduce to "kanun" — and the apostrophe that usually precedes
+  # them goes with it. Without this, the same statute named in two sentences is
+  # two different strings.
+  statute_title:
+    - strip
+    - lower
+    - {regex_replace: {pattern: "[''`´]", replace: ""}}
+    - {regex_replace: {pattern: "\\s+", replace: " "}}
+    - {regex_replace: {pattern: "(?:nun|nın|nin|nün|dan|den|ta|te|da|de|na|ne|yla|yle|ile)\\b", replace: ""}}
+    - {regex_replace: {pattern: "\\s+", replace: " "}}
+    - strip
+
+# No rule for ARTICLE, PARTY or CLAIM, and the reasons differ.
+#
+# ARTICLE resolves only when a mention names both the statute and the article,
+# and the rule below does that. A bare "369. madde" is left alone rather than
+# guessed at: attaching it to whichever statute was last mentioned would
+# manufacture citations, and manufactured citations are exactly what the
+# evaluation is meant to detect.
+#
+# PARTY and CLAIM have no backbone to resolve against. Decisions are published
+# pseudonymised — "davacı", "davalı" — and heads of relief are not enumerated
+# anywhere. Their mentions stay as extraction produced them.
+resolve:
+  - entity: STATUTE
+    target: Statute
+    id: "kanun:{name|statute_number}"
+    match: "{name|statute_title}"
+    # Fuzzy is in the chain here and was not for oss repositories, because a
+    # statute really is named inexactly: "İş Kanunu" and "4857 sayılı İş
+    # Kanunu" are the same statute, and no normaliser turns one into the other.
+    methods: [exact, alias, fuzzy]
+    # Lower than the 93 oss uses on package names. Statute titles are long
+    # phrases, and long strings that differ by a suffix score far higher than
+    # short ones that differ by a letter — the same threshold would mean
+    # something much stricter here.
+    fuzzy_threshold: 88
+    fuzzy_field: title
+    on_unresolved: provisional
+
+  - entity: ARTICLE
+    target: Article
+    id: "madde:{name|article_ref}"
+    match: "{name|article_ref}"
+    methods: [exact]
+    on_unresolved: drop
+
+  - entity: DECISION
+    target: Decision
+    id: "karar:{name|case_number}"
+    match: "{name|case_number}"
+    # No fuzzy: a case number is a number. 2025/717 and 2025/711 differ by a
+    # digit and are different cases, and they score above any threshold worth
+    # setting.
+    methods: [exact, alias]
+    on_unresolved: drop
+
+  - entity: CHAMBER
+    target: Chamber
+    id: "daire:{name|statute_number}"
+    match: "{name|statute_title}"
+    methods: [exact, fuzzy]
+    fuzzy_threshold: 85
+    fuzzy_field: chamber_name
+    on_unresolved: drop

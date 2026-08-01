@@ -52,12 +52,30 @@ class FetchSpec:
     #: Request headers. Values may contain ``${VAR}``, expanded from the
     #: environment at request time so credentials stay out of the pack.
     headers: dict[str, str] = field(default_factory=dict)
+    #: Walk an offset/limit API: ``{parameter, step, pages}``. The URL carries a
+    #: placeholder named after ``parameter``, which is substituted with 0, step,
+    #: 2*step … until ``pages`` requests have been made or a page comes back
+    #: empty. Almost every bulk API is shaped this way and none of them will
+    #: hand over a thousand rows in one response.
+    paginate: dict[str, Any] = field(default_factory=dict)
     concurrency: int = 8
     on_error: str = "fail"
 
     @property
     def skips_errors(self) -> bool:
         return self.on_error == "skip"
+
+    @property
+    def page_parameter(self) -> str:
+        return str(self.paginate.get("parameter", "offset"))
+
+    @property
+    def page_step(self) -> int:
+        return int(self.paginate.get("step", 100))
+
+    @property
+    def page_limit(self) -> int:
+        return int(self.paginate.get("pages", 0))
 
 
 @dataclass(frozen=True)
@@ -74,7 +92,8 @@ class DeriveSpec:
     source: str
     out: str
     fields: dict[str, str]
-    explode: str | None = None
+    #: Field path, or ``{field, pattern}`` to explode a text field by regex.
+    explode: str | dict[str, str] | None = None
     where: dict[str, dict[str, str]] = field(default_factory=dict)
     #: Output fields that must render non-empty; a row missing any is dropped.
     require: tuple[str, ...] = ()
@@ -110,7 +129,8 @@ class LoadSpec:
     source: str
     node: NodeSpec | None = None
     edge: EdgeSpec | None = None
-    explode: str | None = None
+    #: Field path, or ``{field, pattern}`` to explode a text field by regex.
+    explode: str | dict[str, str] | None = None
     where: dict[str, dict[str, str]] = field(default_factory=dict)
 
     @property
@@ -225,6 +245,29 @@ def _parse_fetch(item: Any, path: Path, index: int) -> FetchSpec:
     if not isinstance(keep, dict):
         raise SourcesError(f"{where}: 'keep' must be a mapping of output field to source path")
 
+    paginate = item.get("paginate") or {}
+    if paginate:
+        if not isinstance(paginate, dict):
+            raise SourcesError(f"{where}: 'paginate' must be a mapping")
+        unknown = set(paginate) - {"parameter", "step", "pages"}
+        if unknown:
+            raise SourcesError(
+                f"{where}: paginate has unknown key(s) {sorted(unknown)}; "
+                "supported: parameter, step, pages"
+            )
+        if int(paginate.get("pages", 0)) < 1:
+            raise SourcesError(f"{where}: paginate needs 'pages' of at least 1")
+        parameter = str(paginate.get("parameter", "offset"))
+        if "{" + parameter + "}" not in str(item["url"]):
+            raise SourcesError(
+                f"{where}: the url has no '{{{parameter}}}' placeholder for paginate to fill, "
+                "so every page would request the same rows"
+            )
+        if item.get("for_each"):
+            raise SourcesError(
+                f"{where}: 'paginate' and 'for_each' both decide what to request; use one"
+            )
+
     return FetchSpec(
         id=str(item["id"]),
         url=str(item["url"]),
@@ -234,6 +277,7 @@ def _parse_fetch(item: Any, path: Path, index: int) -> FetchSpec:
         for_each=_opt_str(item.get("for_each")),
         keep={str(k): str(v) for k, v in keep.items()},
         headers=_str_map(item.get("headers"), f"{where}: headers"),
+        paginate=dict(paginate),
         concurrency=int(item.get("concurrency", 8)),
         on_error=on_error,
     )
@@ -265,7 +309,7 @@ def _parse_derive(item: Any, path: Path, index: int) -> DeriveSpec:
         source=str(item["source"]),
         out=str(item["out"]),
         fields=fields,
-        explode=_opt_str(item.get("explode")),
+        explode=_explode(item.get("explode"), where),
         where=_conditions(item.get("where"), where),
         require=require,
         unique=unique,
@@ -331,9 +375,43 @@ def _parse_load(item: Any, path: Path, index: int) -> LoadSpec:
         source=str(item["source"]),
         node=node,
         edge=edge,
-        explode=_opt_str(item.get("explode")),
+        explode=_explode(item.get("explode"), where),
         where=_conditions(item.get("where"), where),
     )
+
+
+def _explode(raw: Any, where: str) -> str | dict[str, str] | None:
+    """Parse an ``explode:`` value — a field path, or a pattern over one.
+
+    The pattern form is checked here rather than at run time: an unparseable
+    regex would otherwise surface as a step that quietly produced no rows.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw.strip() or None
+    if not isinstance(raw, dict):
+        raise SourcesError(f"{where}: 'explode' must be a field name or a mapping")
+
+    missing = {"field", "pattern"} - set(raw)
+    if missing:
+        raise SourcesError(f"{where}: explode by pattern needs {sorted(missing)}")
+    unknown = set(raw) - {"field", "pattern"}
+    if unknown:
+        raise SourcesError(f"{where}: explode has unknown key(s) {sorted(unknown)}")
+
+    import re as _re
+
+    try:
+        compiled = _re.compile(str(raw["pattern"]))
+    except _re.error as exc:
+        raise SourcesError(f"{where}: explode pattern is not a valid regex — {exc}") from exc
+    if not compiled.groupindex:
+        raise SourcesError(
+            f"{where}: explode pattern has no named groups, so a match produces nothing "
+            "for a template to refer to. Use (?P<name>...)."
+        )
+    return {"field": str(raw["field"]), "pattern": str(raw["pattern"])}
 
 
 def _conditions(raw: Any, where: str) -> dict[str, dict[str, str]]:

@@ -1,0 +1,149 @@
+@prefix law:  <http://graphpack.dev/tr-law/> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# Extraction schema for Turkish case law.
+#
+# Deliberately the same size and shape of thing as the oss ontology — six
+# classes, nine object properties — so that what differs between the two packs
+# is the domain rather than the effort. Local names still arrive at the
+# extractor upper-cased, and every object property still needs both a domain
+# and a range.
+#
+# Class names are English because that is what reaches the model as a label
+# vocabulary and the model reasons about them as strings. The comments carry the
+# Turkish term, since that is what appears in the text being read.
+
+#################################################################
+#    Classes
+#################################################################
+
+law:Statute a owl:Class ;
+    rdfs:label "Statute" ;
+    rdfs:comment "A law, identified by its number — 'kanun'. 4857 is the Labour Law, 6100 the Code of Civil Procedure." .
+
+law:Article a owl:Class ;
+    rdfs:label "Article" ;
+    rdfs:comment "One article of a statute — 'madde'. Cited far more often than the statute alone." .
+
+law:Decision a owl:Class ;
+    rdfs:label "Decision" ;
+    rdfs:comment "A court decision, identified by its case and decision numbers — 'esas' and 'karar'." .
+
+law:Chamber a owl:Class ;
+    rdfs:label "Chamber" ;
+    rdfs:comment "The division of the court that issued a decision — 'daire'." .
+
+law:Party a owl:Class ;
+    rdfs:label "Party" ;
+    rdfs:comment "A side to the dispute: claimant or respondent — 'davacı', 'davalı'. Named by role rather than identity; decisions are published pseudonymised." .
+
+law:Claim a owl:Class ;
+    rdfs:label "Claim" ;
+    rdfs:comment "A head of relief sought — severance pay, notice pay, overtime. 'Kıdem tazminatı', 'ihbar tazminatı', 'fazla çalışma'." .
+
+#################################################################
+#    Object properties
+#################################################################
+
+law:cites a owl:ObjectProperty ;
+    rdfs:label "cites" ;
+    rdfs:comment "The decision relies on this statute. The relation the whole backbone is built from." ;
+    rdfs:domain law:Decision ;
+    rdfs:range law:Statute .
+
+law:cites_article a owl:ObjectProperty ;
+    rdfs:label "cites article" ;
+    rdfs:comment "The decision relies on this specific article, which is what a citation usually names." ;
+    rdfs:domain law:Decision ;
+    rdfs:range law:Article .
+
+law:has_article a owl:ObjectProperty ;
+    rdfs:label "has article" ;
+    rdfs:domain law:Statute ;
+    rdfs:range law:Article .
+
+law:refers_to a owl:ObjectProperty ;
+    rdfs:label "refers to" ;
+    rdfs:comment "The decision cites another decision as authority." ;
+    rdfs:domain law:Decision ;
+    rdfs:range law:Decision .
+
+law:issued_by a owl:ObjectProperty ;
+    rdfs:label "issued by" ;
+    rdfs:domain law:Decision ;
+    rdfs:range law:Chamber .
+
+law:involves a owl:ObjectProperty ;
+    rdfs:label "involves" ;
+    rdfs:domain law:Decision ;
+    rdfs:range law:Party .
+
+law:seeks a owl:ObjectProperty ;
+    rdfs:label "seeks" ;
+    rdfs:comment "The party asks for this head of relief." ;
+    rdfs:domain law:Party ;
+    rdfs:range law:Claim .
+
+law:decides a owl:ObjectProperty ;
+    rdfs:label "decides" ;
+    rdfs:comment "The decision rules on this claim, granting or refusing it." ;
+    rdfs:domain law:Decision ;
+    rdfs:range law:Claim .
+
+law:governs a owl:ObjectProperty ;
+    rdfs:label "governs" ;
+    rdfs:comment "The article supplies the rule for this head of relief." ;
+    rdfs:domain law:Article ;
+    rdfs:range law:Claim .
+
+#################################################################
+#    Datatype properties
+#################################################################
+
+law:number a owl:DatatypeProperty ;
+    rdfs:label "number" ;
+    rdfs:comment "Statute number as enacted, e.g. 4857." ;
+    rdfs:domain law:Statute ;
+    rdfs:range xsd:string .
+
+law:title a owl:DatatypeProperty ;
+    rdfs:label "title" ;
+    rdfs:comment "Name of the statute as the decision spells it." ;
+    rdfs:domain law:Statute ;
+    rdfs:range xsd:string .
+
+law:article_number a owl:DatatypeProperty ;
+    rdfs:label "article number" ;
+    rdfs:domain law:Article ;
+    rdfs:range xsd:string .
+
+law:case_number a owl:DatatypeProperty ;
+    rdfs:label "case number" ;
+    rdfs:comment "The 'esas' number, e.g. 2025/717." ;
+    rdfs:domain law:Decision ;
+    rdfs:range xsd:string .
+
+law:decision_number a owl:DatatypeProperty ;
+    rdfs:label "decision number" ;
+    rdfs:comment "The 'karar' number, e.g. 2025/1351." ;
+    rdfs:domain law:Decision ;
+    rdfs:range xsd:string .
+
+law:decided_on a owl:DatatypeProperty ;
+    rdfs:label "decided on" ;
+    rdfs:domain law:Decision ;
+    rdfs:range xsd:string .
+
+law:chamber_name a owl:DatatypeProperty ;
+    rdfs:label "chamber name" ;
+    rdfs:domain law:Chamber ;
+    rdfs:range xsd:string .
+
+law:role a owl:DatatypeProperty ;
+    rdfs:label "role" ;
+    rdfs:comment "Claimant or respondent — 'davacı' or 'davalı'." ;
+    rdfs:domain law:Party ;
+    rdfs:range xsd:string .

@@ -138,7 +138,62 @@ def _run_step(spec: FetchSpec, data_dir: Path) -> FetchResult:
     target = data_dir / spec.out
     if spec.for_each:
         return _fetch_per_row(spec, data_dir, target)
+    if spec.paginate:
+        return _fetch_pages(spec, target)
     return _fetch_once(spec, target)
+
+
+def _fetch_pages(spec: FetchSpec, target: Path) -> FetchResult:
+    """Walk an offset/limit API until it runs out or the pack's cap is reached.
+
+    Sequential on purpose. Pagination exists because the server would rather not
+    hand over everything at once, and answering that by issuing every page
+    concurrently misses the point.
+    """
+    headers = _resolve_headers(spec)
+    collected: list[dict[str, Any]] = []
+
+    for page in range(spec.page_limit):
+        offset = page * spec.page_step
+        url = spec.url.replace("{" + spec.page_parameter + "}", str(offset))
+        try:
+            payload = _get_json(url, headers)
+        except FetchError as exc:
+            if spec.skips_errors:
+                logger.warning(
+                    "%s: page at %s=%d failed, stopping — %s",
+                    spec.id,
+                    spec.page_parameter,
+                    offset,
+                    exc,
+                )
+                break
+            raise
+
+        records = _records_from(payload, spec, apply_limit=False)
+        if not records:
+            logger.info(
+                "%s: page at %s=%d is empty, stopping", spec.id, spec.page_parameter, offset
+            )
+            break
+
+        collected.extend(records)
+        logger.info(
+            "%s: %s=%d -> %d rows (%d total)",
+            spec.id,
+            spec.page_parameter,
+            offset,
+            len(records),
+            len(collected),
+        )
+        if spec.limit is not None and len(collected) >= spec.limit:
+            break
+
+    if spec.limit is not None:
+        collected = collected[: spec.limit]
+    _write_jsonl(target, collected)
+    logger.info("%s: %d rows -> %s", spec.id, len(collected), target.name)
+    return FetchResult(spec.id, target, len(collected))
 
 
 def _fetch_once(spec: FetchSpec, target: Path) -> FetchResult:
@@ -225,7 +280,12 @@ def _resolve_headers(spec: FetchSpec) -> dict[str, str]:
     return resolved
 
 
-def _records_from(payload: Any, spec: FetchSpec) -> list[dict[str, Any]]:
+def _records_from(payload: Any, spec: FetchSpec, apply_limit: bool = True) -> list[dict[str, Any]]:
+    """Pull the record list out of one response.
+
+    ``apply_limit`` is off while paginating: the cap is on the whole run, and
+    applying it per page would fetch every page and keep the first N of each.
+    """
     data = field(payload, spec.select) if spec.select else payload
     if data is None:
         raise FetchError(f"{spec.id}: '{spec.select}' not found in the response")
@@ -234,7 +294,7 @@ def _records_from(payload: Any, spec: FetchSpec) -> list[dict[str, Any]]:
             f"{spec.id}: expected a list at '{spec.select or 'the response root'}', "
             f"got {type(data).__name__}"
         )
-    if spec.limit is not None:
+    if apply_limit and spec.limit is not None:
         data = data[: spec.limit]
     records = [row if isinstance(row, dict) else {"value": row} for row in data]
     return [_project(row, spec.keep) for row in records] if spec.keep else records

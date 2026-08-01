@@ -1,0 +1,41 @@
+# Turkish labour case law — the second vertical, chosen to share as little as
+# possible with the first.
+#
+# Where oss gets a backbone handed to it as published metadata, this one has to
+# build one out of citations found in prose. Where a Python package name in a
+# sentence usually *is* the package name, a statute is written a dozen ways:
+# "6100 sayılı Hukuk Muhakemeleri Kanunu'nun 369 uncu maddesi", "HMK m. 369",
+# "anılan Kanun'un 369. maddesi". And the language is Turkish, with suffixes
+# attaching to the thing being cited.
+#
+# If the pack abstraction only fits domains that resemble each other, this is
+# where it fails. That is the point of it being here.
+
+name: tr-law
+version: 0.1.0
+lang: tr
+id_prefix: kanun
+description: >
+  Decisions of the 9th Civil Chamber of the Turkish Court of Cassation, 2025.
+  The chamber hears labour disputes. Backbone assembled from the statutes and
+  articles the decisions cite; corpus is the decision texts themselves.
+
+extraction:
+  strict_schema: true
+  max_triplets_per_chunk: 20
+  # Decisions are long and densely subordinated; a smaller chunk cuts a citation
+  # away from the sentence that gives it meaning.
+  chunk_size: 1536
+  chunk_overlap: 192
+
+llm:
+  provider: null
+  config: {}
+
+embedding:
+  kind: null
+  model: null
+  dimension: null
+
+stores:
+  qdrant_collection: trlaw_chunks

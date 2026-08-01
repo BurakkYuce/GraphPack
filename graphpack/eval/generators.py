@@ -139,4 +139,76 @@ def _histogram(mentions: dict[str, set[str]]) -> dict[int, int]:
     return dict(sorted(counts.items()))
 
 
-GENERATORS = {"backbone_edges": backbone_edges}
+#: What the backbone says a document itself is connected to.
+#:
+#: A different shape of gold from ``backbone_edges``, and tr-law needs it: there,
+#: the document *is* a node. A decision cites statutes, so the fact to be found
+#: is `(this decision, that statute)` — not a pair of statutes, which is what
+#: asking for two same-labelled endpoints produces. The tr-law backbone holds
+#: 2,367 `Decision -[:CITES]-> Statute` edges and exactly zero
+#: `Statute -[:CITES]-> Statute`, so the symmetric generator scored nothing.
+_DOCUMENT_BACKBONE = """
+MATCH (d:{source_label} {{pack: $pack}})-[:{relation}]->(t:{label} {{pack: $pack}})
+RETURN d.id AS document, collect(DISTINCT t.id) AS targets
+"""
+
+
+def document_edges(session, pack: str, task) -> tuple[set, set, dict]:
+    """Score what a document was linked to, against what the backbone says it is.
+
+    Gold is `(document, target)` for every backbone edge out of a document that
+    the corpus actually ingested. Prediction is `(document, target)` for every
+    entity mentioned in that document's chunks that resolved to the right kind
+    of node.
+
+    Restricted to ingested documents on purpose. The backbone holds every
+    decision the fetch produced; charging extraction for the 1,378 that were
+    never put through it would be measuring the sample size.
+    """
+    source_label = task.source_label or "Document"
+
+    backbone: dict[str, set[str]] = {}
+    for row in session.run(
+        _DOCUMENT_BACKBONE.format(
+            source_label=source_label, relation=task.backbone_relation, label=task.endpoint_label
+        ),
+        pack=pack,
+    ):
+        backbone[row["document"]] = set(row["targets"])
+
+    mentions: dict[str, set[str]] = {}
+    for row in session.run(
+        _MENTIONS_PER_DOCUMENT.format(entity=ENTITY_LABEL, label=task.endpoint_label), pack=pack
+    ):
+        mentions[row["document"]] = set(row["entities"])
+
+    ingested = set(mentions)
+    if not ingested:
+        logger.warning(
+            "No document has a resolved %s mention — nothing to score", task.endpoint_label
+        )
+
+    gold = {
+        (document, target)
+        for document, targets in backbone.items()
+        if document in ingested
+        for target in targets
+    }
+    predicted = {(document, target) for document, targets in mentions.items() for target in targets}
+
+    return (
+        predicted,
+        gold,
+        {
+            "documents_ingested": len(ingested),
+            "documents_with_backbone_edges": sum(1 for d in backbone if d in ingested),
+            "backbone_edges": sum(len(t) for t in backbone.values()),
+            "documents_with_resolved_entities": len(ingested),
+            "resolvable_entities": sum(len(e) for e in mentions.values()),
+            "mentions_per_document": _histogram(mentions),
+        },
+    )
+
+
+#: Registered last, so every generator above is defined by the time it is read.
+GENERATORS = {"backbone_edges": backbone_edges, "document_edges": document_edges}

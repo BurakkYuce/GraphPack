@@ -141,3 +141,26 @@ def test_a_corpus_that_simply_never_pairs_them_is_its_own_answer():
 
     assert "no pair to score" in reason
     assert "ingest" not in reason
+
+
+def test_only_implemented_generators_are_accepted(tmp_path):
+    """The list used to be written by hand and named two that were never built —
+    `regex_canonical` and `structured_field`. A pack could declare one, pass
+    validation, and fail at run time with a KeyError."""
+    from graphpack.eval.contract import EvalError, load_eval_rules
+
+    (tmp_path / "eval.yaml").write_text(
+        "tasks:\n  - {name: t, generator: regex_canonical, relation: R, "
+        "backbone_relation: R, endpoint_label: L}\nholdout: 0.0\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(EvalError, match="unknown generator"):
+        load_eval_rules(tmp_path / "eval.yaml")
+
+
+def test_the_accepted_names_are_exactly_what_is_registered():
+    from graphpack.eval.contract import _known_generators
+    from graphpack.eval.generators import GENERATORS
+
+    assert set(_known_generators()) == set(GENERATORS)

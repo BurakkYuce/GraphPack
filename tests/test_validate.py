@@ -25,7 +25,7 @@ def test_valid_pack_passes_with_notes_for_later_phases(domains):
 
     assert result.ok, result.errors
     assert "2 entity types" in result.summary
-    assert "backbone: 1 fetch, 1 load" in result.summary
+    assert "backbone: 1 fetch, 2 load" in result.summary
     assert "resolve: 1 rule" in result.summary
     # Files belonging to phases that have not landed are notes, not failures.
     assert not result.warnings or all("no resolve rule" in w for w in result.warnings)
@@ -206,3 +206,108 @@ def test_a_corpus_template_with_a_placeholder_passes(domains):
     result = validate_pack("widgets")
 
     assert not [e for e in result.errors if "placeholder" in e]
+
+
+def test_an_eval_task_asking_for_a_shape_the_backbone_cannot_build_is_rejected(domains):
+    """backbone_edges scores pairs of same-labelled nodes. tr-law's decisions
+    cite statutes, so the backbone holds Decision->Statute and no
+    Statute->Statute at all — and the mistake is invisible until an extraction
+    run finishes and the gold set comes back empty. That run is fifteen hours."""
+    domains(
+        "widgets",
+        sources=textwrap.dedent(
+            """\
+            fetch:
+              - id: a
+                url: https://example.invalid/a.json
+                out: a.jsonl
+            load:
+              - source: a.jsonl
+                node: {label: Doc, id: "d:{n}"}
+              - source: a.jsonl
+                node: {label: Widget, id: "w:{n}"}
+              - source: a.jsonl
+                edge: {type: CITES, from: "d:{n}", to: "w:{n}"}
+            """
+        ),
+        evaluation=textwrap.dedent(
+            """\
+            tasks:
+              - name: t
+                generator: backbone_edges
+                relation: CITES
+                backbone_relation: CITES
+                endpoint_label: Widget
+            holdout: 0.0
+            seed: 0
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("document_edges" in e and "Doc->Widget" in e for e in result.errors)
+
+
+def test_the_document_shaped_generator_passes_the_same_check(domains):
+    domains(
+        "widgets",
+        sources=textwrap.dedent(
+            """\
+            fetch:
+              - id: a
+                url: https://example.invalid/a.json
+                out: a.jsonl
+            load:
+              - source: a.jsonl
+                node: {label: Doc, id: "d:{n}"}
+              - source: a.jsonl
+                node: {label: Widget, id: "w:{n}"}
+              - source: a.jsonl
+                edge: {type: CITES, from: "d:{n}", to: "w:{n}"}
+            """
+        ),
+        evaluation=textwrap.dedent(
+            """\
+            tasks:
+              - name: t
+                generator: document_edges
+                relation: CITES
+                backbone_relation: CITES
+                source_label: Doc
+                endpoint_label: Widget
+            holdout: 0.0
+            seed: 0
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not [e for e in result.errors if "eval task" in e]
+
+
+def test_an_eval_task_scoring_a_relation_nothing_builds_is_a_note(domains):
+    """Not an error — a pack may score a relation extraction invents and the
+    backbone never states — but silence would let a typo pass for coverage."""
+    domains(
+        "widgets",
+        evaluation=textwrap.dedent(
+            """\
+            tasks:
+              - name: t
+                generator: document_edges
+                relation: NOPE
+                backbone_relation: NOPE
+                source_label: Doc
+                endpoint_label: Widget
+            holdout: 0.0
+            seed: 0
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert any("no load step builds" in w for w in result.warnings)

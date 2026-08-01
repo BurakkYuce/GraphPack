@@ -19,25 +19,28 @@
 # says the same thing about the oss false positives, for the same reason.
 
 tasks:
+  # The document is a node here, which the oss pack's shape does not cover.
+  # A decision cites statutes, so the fact extraction has to find is
+  # "(this decision, that statute)". Asking for two endpoints of the same label
+  # — as `backbone_edges` does — looks for `Statute -[:CITES]-> Statute`, of
+  # which this backbone holds zero against 2,367 `Decision -[:CITES]-> Statute`.
+  # Written that way first, it would have scored an empty gold set after a
+  # fifteen-hour extraction run.
   - name: statute_citations
-    generator: backbone_edges
+    generator: document_edges
     relation: CITES
     backbone_relation: CITES
+    source_label: Decision
     endpoint_label: Statute
-    # A decision citing a statute is directed by nature: statutes do not cite
-    # decisions.
     directed: true
 
   - name: article_citations
-    generator: backbone_edges
+    generator: document_edges
     relation: CITES_ARTICLE
     backbone_relation: CITES_ARTICLE
+    source_label: Decision
     endpoint_label: Article
     directed: true
 
-# Nothing withheld yet, for the same reason as the oss pack: no rule here has
-# been fitted to these decisions. The alias table holds abbreviations any
-# Turkish lawyer would list without reading a single one of them. That stops
-# being true the moment an entry is added because the error report suggested it.
 holdout: 0.0
 seed: 0

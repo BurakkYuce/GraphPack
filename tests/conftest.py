@@ -69,6 +69,13 @@ MINIMAL_SOURCES = textwrap.dedent(
           id: "w:{name|slug}"
           properties:
             name: "{name}"
+      # The relation MINIMAL_EVAL scores. Without it the fixture declares a task
+      # over an edge nothing builds — which validation now reports, correctly.
+      - source: widgets.jsonl
+        edge:
+          type: BUILT_IN
+          from: "w:{name|slug}"
+          to: "w:{built_in|slug}"
     """
 )
 

@@ -14,14 +14,21 @@ from typing import Any
 
 import yaml
 
+
 #: Ways a pack can obtain ground truth without anyone annotating anything.
 #:
-#: ``backbone_edges``   the structured graph already states the relation, so any
-#:                      document mentioning both endpoints has a gold edge.
-#: ``regex_canonical``  the text states the relation in a form a pattern can
-#:                      recognise — a citation, an identifier. Phase 5.
-#: ``structured_field`` a field of the source record states it outright. Phase 5.
-GENERATORS = ("backbone_edges", "regex_canonical", "structured_field")
+#: ``backbone_edges``  the structured graph already relates two entities, so any
+#:                     document mentioning both has a gold edge.
+#: ``document_edges``  the document is itself a node, and the backbone states
+#:                     what it points at — a decision and the statutes it cites.
+#:
+#: Read from the implementations rather than listed here. This tuple used to be
+#: written by hand and named two generators that were never built: a pack could
+#: declare one, pass validation, and fail at run time with a KeyError.
+def _known_generators() -> tuple[str, ...]:
+    from graphpack.eval.generators import GENERATORS as implemented
+
+    return tuple(sorted(implemented))
 
 
 class EvalError(Exception):
@@ -41,6 +48,10 @@ class Task:
     backbone_relation: str
     #: Backbone labels the endpoints must carry for a pair to count.
     endpoint_label: str
+    #: For ``document_edges``: the label the corpus documents themselves carry.
+    #: A decision is both a document and a node, and the gold is the edge
+    #: between it and what it cites.
+    source_label: str = ""
     #: Treat the relation as undirected when scoring. "A and B are related" is
     #: sometimes all a sentence says, and penalising a model for guessing the
     #: direction of a symmetric statement measures nothing.
@@ -96,10 +107,9 @@ def _parse_task(item: Any, path: Path, index: int) -> Task:
             raise EvalError(f"{where} is missing '{required}'")
 
     generator = str(item["generator"])
-    if generator not in GENERATORS:
-        raise EvalError(
-            f"{where}: unknown generator '{generator}'; available: {', '.join(GENERATORS)}"
-        )
+    known = _known_generators()
+    if generator not in known:
+        raise EvalError(f"{where}: unknown generator '{generator}'; available: {', '.join(known)}")
 
     relation = str(item["relation"])
     return Task(
@@ -108,5 +118,6 @@ def _parse_task(item: Any, path: Path, index: int) -> Task:
         relation=relation,
         backbone_relation=str(item.get("backbone_relation") or relation),
         endpoint_label=str(item["endpoint_label"]),
+        source_label=str(item.get("source_label") or ""),
         directed=bool(item.get("directed", True)),
     )

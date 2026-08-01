@@ -52,6 +52,7 @@ def validate_pack(name: str) -> ValidationResult:
     _check_yaml_files(pack, result)
     _check_ontology(pack, result)
     _check_sources(pack, result)
+    _check_eval_shape(pack, result)
     _check_resolve(pack, result)
     return result
 
@@ -131,6 +132,62 @@ def _check_ontology(pack: Pack, result: ValidationResult) -> None:
             f"{len(schema.triple_constraints)} triple constraints exceed the "
             f"{MAX_TRIPLE_CONSTRAINTS} limit — usually a relation missing rdfs:range"
         )
+
+
+def _check_eval_shape(pack: Pack, result: ValidationResult) -> None:
+    """Warn when an eval task asks for a shape the pack's backbone cannot have.
+
+    `backbone_edges` scores pairs of same-labelled nodes; `document_edges` scores
+    an edge out of a document. Choosing the wrong one is not visible until an
+    extraction run finishes and the gold set comes back empty — which for tr-law
+    would have been fifteen hours.
+    """
+    from graphpack.backbone.sources import SourcesError, load_sources
+    from graphpack.eval.contract import EvalError, load_eval_rules
+
+    eval_path = pack.path("eval.yaml")
+    sources_path = pack.path("sources.yaml")
+    if not eval_path.is_file() or not sources_path.is_file():
+        return
+    try:
+        rules = load_eval_rules(eval_path)
+        sources = load_sources(sources_path)
+    except (EvalError, SourcesError):
+        return  # reported by the checks that own those files
+
+    # Which (from-label, type, to-label) triples the backbone can actually build.
+    edges = {
+        (_label_of(spec.edge.start, sources), spec.edge.type, _label_of(spec.edge.end, sources))
+        for spec in sources.load
+        if spec.edge
+    }
+    for task in rules.tasks:
+        wanted = task.backbone_relation
+        pairs = {(f, t) for f, rel, t in edges if rel == wanted}
+        if not pairs:
+            result.warnings.append(
+                f"eval task '{task.name}' scores {wanted}, which no load step builds"
+            )
+            continue
+        if task.generator == "backbone_edges" and not any(
+            f == task.endpoint_label == t for f, t in pairs
+        ):
+            shapes = ", ".join(sorted(f"{f}->{t}" for f, t in pairs))
+            result.errors.append(
+                f"eval task '{task.name}' uses backbone_edges with "
+                f"endpoint_label {task.endpoint_label}, which needs "
+                f"{task.endpoint_label}->{task.endpoint_label} edges; the backbone "
+                f"builds {shapes}. Use document_edges with a source_label for that shape."
+            )
+
+
+def _label_of(id_template: str, sources) -> str:
+    """The node label an edge endpoint template points at, by id prefix."""
+    prefix = _prefix(id_template)
+    for spec in sources.load:
+        if spec.node and _prefix(spec.node.id) == prefix:
+            return spec.node.label
+    return "?"
 
 
 def _check_sources(pack: Pack, result: ValidationResult) -> None:

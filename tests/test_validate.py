@@ -152,3 +152,57 @@ def test_invalid_yaml_in_optional_file_is_an_error(domains):
 
     assert not result.ok
     assert any("sources.yaml" in e and "invalid YAML" in e for e in result.errors)
+
+
+def test_a_corpus_text_template_with_no_placeholder_is_rejected(domains):
+    """`text: body` names a field to a reader and renders the literal string
+    "body" to the code — 609 documents of four characters, embedded without
+    complaint. The benchmark scoring zero is a long way from the cause."""
+    domains(
+        "widgets",
+        sources=textwrap.dedent(
+            """\
+            fetch:
+              - id: a
+                url: https://example.invalid/a.json
+                out: a.jsonl
+            load:
+              - source: a.jsonl
+                node: {label: Widget, id: "w:{n}"}
+            corpus:
+              - source: a.jsonl
+                id: "d:{n}"
+                text: body
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("no placeholder" in e and "{body}" in e for e in result.errors)
+
+
+def test_a_corpus_template_with_a_placeholder_passes(domains):
+    domains(
+        "widgets",
+        sources=textwrap.dedent(
+            """\
+            fetch:
+              - id: a
+                url: https://example.invalid/a.json
+                out: a.jsonl
+            load:
+              - source: a.jsonl
+                node: {label: Widget, id: "w:{n}"}
+            corpus:
+              - source: a.jsonl
+                id: "d:{n}"
+                text: "{body}"
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not [e for e in result.errors if "placeholder" in e]

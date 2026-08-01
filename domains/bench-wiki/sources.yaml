@@ -122,7 +122,11 @@ corpus:
   # indexed for hybrid search, with no extraction pass behind it.
   - source: articles.jsonl
     id: "mhr:{url|url_key}"
-    text: body
+    # Braces required. Written as a bare `body` this renders the literal string
+    # "body" — 609 documents of four characters each, which an ingest would
+    # happily embed. The title is not repeated here because it is metadata, and
+    # metadata is prepended to every chunk already.
+    text: "{body}"
     metadata:
       title: "{title}"
       source: "{source}"

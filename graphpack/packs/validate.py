@@ -150,6 +150,20 @@ def _check_sources(pack: Pack, result: ValidationResult) -> None:
 
     if not sources.load:
         result.warnings.append("sources.yaml declares no load steps")
+
+    # A template with no placeholder renders itself. `text: body` looks like it
+    # names a field and produces the four-character string "body" for every
+    # document — an ingest embeds that without complaint, and the corpus is
+    # gone. Caught here because the next place it shows up is a benchmark
+    # scoring zero.
+    for spec in sources.corpus:
+        for field_name, template in (("text", spec.text), ("id", spec.id)):
+            if template and "{" not in template:
+                result.errors.append(
+                    f"{spec.describes}: {field_name} is '{template}', which has no "
+                    f"placeholder and renders as that literal string. Did you mean "
+                    f"'{{{template}}}'?"
+                )
         return
 
     labels = sources.node_labels

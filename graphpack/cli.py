@@ -953,6 +953,80 @@ def viz_command(
     )
 
 
+@app.command("bench")
+def bench_command(
+    pack: str = typer.Argument(..., help="Pack to benchmark."),
+    limit: int = typer.Option(0, "--limit", "-n", help="Score only the first N queries."),
+    top_k: int = typer.Option(30, "--top-k", help="How deep to retrieve per query."),
+) -> None:
+    """Score the corpus half against a published benchmark's own ground truth.
+
+    Reports Hit@k and MRR@10 — the pair MultiHop-RAG reports, and therefore the
+    pair worth comparing against. `eval run` is the other measurement: what
+    extraction found, against gold a pack derived from its own structured data.
+    """
+    from graphpack.backbone import session_scope
+    from graphpack.bench import BenchError, load_gold, run_benchmark
+    from graphpack.bench.runner import check_gold_is_reachable
+    from graphpack.packs.loader import build_system
+
+    loaded = load_pack(pack)
+    data = loaded.root / "data"
+
+    try:
+        queries = load_gold(data / "gold.jsonl", data / "queries.jsonl")
+    except BenchError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if limit:
+        queries = queries[:limit]
+    if not queries:
+        err_console.print("[red]No queries to run.[/red]")
+        raise typer.Exit(code=1)
+
+    with session_scope() as session:
+        try:
+            check_gold_is_reachable(session, loaded.name, queries)
+        except BenchError as exc:
+            err_console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+
+    system = build_system(loaded)
+    console.print(f"Running {len(queries)} query(ies) at top-{top_k}...")
+    scores = run_benchmark(
+        system,
+        queries,
+        top_k=top_k,
+        progress=lambda done, total: console.print(f"  {done}/{total}", style="dim"),
+    )
+
+    table = Table("metric", "value", "95% interval")
+    for k in scores.diagnostics["ks"]:
+        low, high = scores.interval(k)
+        table.add_row(f"Hit@{k}", f"{scores.hit_rate(k):.3f}", f"{low:.3f} – {high:.3f}")
+    table.add_row("MRR@10", f"{scores.mrr:.3f}", "")
+    console.print(table)
+
+    console.print(
+        f"\n{scores.queries} answerable query(ies); "
+        f"{scores.null_queries} with no answer in the corpus, "
+        f"{scores.null_correct} of which retrieved nothing."
+    )
+    if scores.attribution_rate is None:
+        console.print(
+            "[yellow]Search returned no passages at all, so the scores above are "
+            "zero by default rather than by measurement. Ingest the corpus "
+            f"first: graphpack ingest {pack}[/yellow]"
+        )
+    elif scores.attribution_rate < 1.0:
+        console.print(
+            f"[yellow]Only {scores.attribution_rate:.1%} of retrieved passages could be "
+            "traced to an article — every score above is bounded by that, not by "
+            "retrieval.[/yellow]"
+        )
+
+
 def main() -> None:
     """Turn the expected failures into one-line messages.
 

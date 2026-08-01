@@ -1,0 +1,237 @@
+"""Retrieval scoring against a published benchmark's ground truth.
+
+The arithmetic is the part worth pinning. A rank-aware metric computed the wrong
+way still produces a plausible number, and a plausible wrong number in a
+comparison table is worse than no table.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from graphpack.bench.metrics import MRR_DEPTH, QueryResult, score
+from graphpack.bench.runner import BenchError, BenchQuery, load_gold, run_query
+
+pytestmark = pytest.mark.unit
+
+
+def result(ranked, gold, unattributed=0, question="q"):
+    return QueryResult(
+        question=question,
+        ranked=tuple(ranked),
+        gold=frozenset(gold),
+        unattributed=unattributed,
+    )
+
+
+# ----------------------------------------------------------------------
+# Rank is the point
+# ----------------------------------------------------------------------
+
+
+def test_the_rank_of_the_first_gold_article_is_what_mrr_counts():
+    assert result(["a", "b", "gold"], ["gold"]).first_hit == 3
+
+
+def test_a_gold_article_below_the_cut_does_not_count():
+    """MRR@10 is a different quantity from MRR over an unbounded list, and the
+    published number is the bounded one."""
+    ranked = [f"x{i}" for i in range(MRR_DEPTH)] + ["gold"]
+
+    assert result(ranked, ["gold"]).first_hit is None
+
+
+def test_reciprocal_rank_is_averaged_over_every_query_not_just_the_hits():
+    """A query that found nothing contributes zero, not nothing. Dividing by the
+    number of successful queries would report the score of a system that
+    answered only what it was already good at."""
+    scores = score([result(["gold"], ["gold"]), result(["miss"], ["gold"])])
+
+    assert scores.mrr == pytest.approx(0.5)
+
+
+def test_hit_at_k_looks_only_at_the_first_k():
+    hit = result(["a", "b", "c", "gold"], ["gold"])
+
+    assert hit.hit_at(4) is True
+    assert hit.hit_at(2) is False
+
+
+def test_any_one_gold_article_is_a_hit():
+    """The benchmark's questions rest on several articles. Hit@k asks whether
+    retrieval found *an* answer, which is the quantity the paper reports —
+    recall over the whole evidence set is a different one."""
+    assert result(["b"], ["a", "b", "c"]).hit_at(1) is True
+
+
+# ----------------------------------------------------------------------
+# Queries with no answer
+# ----------------------------------------------------------------------
+
+
+def test_null_queries_are_scored_apart_from_the_rest():
+    """301 of MultiHop-RAG's queries have no answer in the corpus. Averaging
+    them in would reward a system that returns nothing for everything."""
+    scores = score([result(["gold"], ["gold"]), result([], [])])
+
+    assert scores.queries == 1
+    assert scores.null_queries == 1
+    assert scores.hit_rate(1) == 1.0
+
+
+def test_a_null_query_is_right_when_it_retrieves_nothing():
+    scores = score([result([], []), result(["something"], [])])
+
+    assert scores.null_queries == 2
+    assert scores.null_correct == 1
+
+
+# ----------------------------------------------------------------------
+# The mapping from passages to articles
+# ----------------------------------------------------------------------
+
+
+class FakeSystem:
+    """Stands in for the engine's hybrid search."""
+
+    def __init__(self, docs):
+        self.docs = docs
+
+    async def search(self, question, top_k=10):
+        return [{"text": "…", "score": 1.0, "doc_id": d} for d in self.docs[:top_k]]
+
+
+def test_several_chunks_of_one_article_are_one_result():
+    """Retrieval returns chunks; the benchmark scores articles. Counting a
+    chunk each would let one article fill the whole ranked list and make Hit@10
+    a measure of chunk density."""
+    got = run_query(FakeSystem(["mhr:a", "mhr:a", "mhr:b"]), BenchQuery("q", frozenset({"mhr:b"})))
+
+    assert got.ranked == ("mhr:a", "mhr:b")
+
+
+def test_the_rank_an_article_earned_is_its_first_chunk():
+    got = run_query(FakeSystem(["mhr:a", "mhr:b", "mhr:a"]), BenchQuery("q", frozenset({"mhr:a"})))
+
+    assert got.first_hit == 1
+
+
+def test_a_passage_naming_no_article_is_counted_not_dropped():
+    """If the corpus stops carrying document ids, every score goes to zero and
+    looks like a retrieval failure. This is the number that says otherwise."""
+    got = run_query(FakeSystem(["mhr:a", "", "mhr:b"]), BenchQuery("q", frozenset({"mhr:a"})))
+
+    assert got.unattributed == 1
+    assert got.ranked == ("mhr:a", "mhr:b")
+
+
+def test_attribution_is_reported_as_a_share_of_everything_retrieved():
+    scores = score([result(["a", "b"], ["a"], unattributed=2)])
+
+    assert scores.retrieved == 4
+    assert scores.attribution_rate == pytest.approx(0.5)
+
+
+# ----------------------------------------------------------------------
+# Reading the gold
+# ----------------------------------------------------------------------
+
+
+def test_a_question_collects_every_article_its_evidence_names(tmp_path):
+    gold = tmp_path / "gold.jsonl"
+    gold.write_text(
+        "\n".join(
+            json.dumps(r)
+            for r in [
+                {"question": "q1", "article": "mhr:a", "question_type": "inference_query"},
+                {"question": "q1", "article": "mhr:b", "question_type": "inference_query"},
+                {"question": "q2", "article": "mhr:c", "question_type": "comparison_query"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    queries = {q.question: q for q in load_gold(gold)}
+
+    assert queries["q1"].gold == frozenset({"mhr:a", "mhr:b"})
+    assert queries["q1"].kind == "inference_query"
+
+
+def test_queries_with_no_evidence_are_carried_through_with_empty_gold(tmp_path):
+    """They never reach gold.jsonl — a null query's evidence list is empty and
+    the derive step requires an article — so they come back from queries.jsonl.
+    Losing them would silently drop the only questions that test saying no."""
+    (tmp_path / "gold.jsonl").write_text(
+        json.dumps({"question": "q1", "article": "mhr:a"}) + "\n", encoding="utf-8"
+    )
+    (tmp_path / "queries.jsonl").write_text(
+        "\n".join(
+            json.dumps(r)
+            for r in [
+                {"query": "q1", "question_type": "inference_query"},
+                {"query": "q-null", "question_type": "null_query"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    queries = load_gold(tmp_path / "gold.jsonl", tmp_path / "queries.jsonl")
+
+    null = [q for q in queries if not q.gold]
+    assert [q.question for q in null] == ["q-null"]
+    assert len(queries) == 2, "a question with evidence must not also arrive as a null"
+
+
+def test_missing_gold_says_what_to_run(tmp_path):
+    with pytest.raises(BenchError, match="backbone fetch"):
+        load_gold(tmp_path / "absent.jsonl")
+
+
+# ----------------------------------------------------------------------
+# Refusing to report a number about nothing
+# ----------------------------------------------------------------------
+
+
+class FakeSession:
+    def __init__(self, ids):
+        self.ids = ids
+
+    def run(self, query, **params):
+        return [{"id": i} for i in params["ids"] if i in self.ids]
+
+
+def test_gold_the_graph_does_not_hold_stops_the_run():
+    """Every miss would be the loader's rather than the retriever's, and the
+    number would describe nothing."""
+    from graphpack.bench.runner import check_gold_is_reachable
+
+    queries = [BenchQuery("q", frozenset({"mhr:a", "mhr:ghost"}))]
+
+    with pytest.raises(BenchError, match="not in the graph"):
+        check_gold_is_reachable(FakeSession({"mhr:a"}), "bench-wiki", queries)
+
+
+def test_gold_that_is_all_present_passes_quietly():
+    from graphpack.bench.runner import check_gold_is_reachable
+
+    check_gold_is_reachable(
+        FakeSession({"mhr:a", "mhr:b"}), "bench-wiki", [BenchQuery("q", frozenset({"mhr:a"}))]
+    )
+
+
+def test_nothing_retrieved_is_not_reported_as_a_broken_mapping():
+    """Two different faults. An un-ingested corpus retrieves nothing; a broken
+    document-id mapping retrieves plenty and can attribute none of it. Reporting
+    the first as 0% attribution blamed the mapping for search having returned
+    nothing, and sent the reader to the wrong place."""
+    scores = score([result([], ["gold"])])
+
+    assert scores.attribution_rate is None
+
+
+def test_retrieved_but_unattributable_is_reported_as_such():
+    scores = score([result([], ["gold"], unattributed=5)])
+
+    assert scores.attribution_rate == 0.0

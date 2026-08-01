@@ -193,3 +193,93 @@ def test_the_real_pack_declares_a_corpus():
     sources = load_sources(load_pack("oss").path("sources.yaml"))
 
     assert sources.corpus, "the oss pack should declare corpus steps"
+
+
+def test_the_pack_tag_is_hidden_from_the_model(tmp_path):
+    """LlamaIndex prepends metadata to the text it sends. Left visible, the pack
+    tag becomes document content — extraction produced an entity named
+    "pack: oss", typed PACKAGE, from a thread about botocore."""
+    from llama_index.core.schema import MetadataMode
+
+    documents = _documents(tmp_path)
+
+    seen = documents[0].get_content(metadata_mode=MetadataMode.LLM)
+    assert "pack:" not in seen
+    assert documents[0].metadata["pack"] == "testpack"
+
+
+def test_the_pack_tag_is_hidden_from_the_embedding_too(tmp_path):
+    """It is not text about the document any more than it is text for the model,
+    and an embedding that encodes it moves every document in a pack together."""
+    from llama_index.core.schema import MetadataMode
+
+    seen = _documents(tmp_path)[0].get_content(metadata_mode=MetadataMode.EMBED)
+
+    assert "pack:" not in seen
+
+
+def test_a_pack_can_hide_more_of_its_own_metadata(tmp_path):
+    """A URL and a state flag are kept for the graph and are noise in a prompt —
+    much of the URL and DATE entity noise in the oss run came from exactly
+    these lines."""
+    from llama_index.core.schema import MetadataMode
+
+    documents = _documents(tmp_path, hide=["url"])
+
+    seen = documents[0].get_content(metadata_mode=MetadataMode.LLM)
+    assert "url:" not in seen
+    assert "title:" in seen, "hiding one field must not hide the rest"
+    assert documents[0].metadata["url"] == "https://example.invalid/1"
+
+
+def test_hiding_a_field_the_row_never_had_is_not_carried(tmp_path):
+    """A phantom exclusion is harmless but misleading when read back."""
+    documents = _documents(tmp_path, hide=["nosuchfield"])
+
+    assert documents[0].excluded_llm_metadata_keys == ["pack"]
+
+
+def _documents(tmp_path, hide=None):
+    """One document from a minimal corpus block."""
+    import json
+    import textwrap
+
+    from graphpack.backbone.sources import load_sources
+    from graphpack.corpus import build_documents
+
+    hide_line = f"    hide_from_model: {json.dumps(hide)}\n" if hide else ""
+    (tmp_path / "sources.yaml").write_text(
+        textwrap.dedent(
+            """\
+            fetch:
+              - id: threads
+                url: https://example.invalid/t.json
+                out: threads.jsonl
+
+            corpus:
+              - source: threads.jsonl
+                id: "t:{n}"
+                text: body
+                metadata:
+                  title: "{title}"
+                  url: "{url}"
+            """
+        )
+        + hide_line,
+        encoding="utf-8",
+    )
+    data = tmp_path / "data"
+    data.mkdir(exist_ok=True)
+    (data / "threads.jsonl").write_text(
+        json.dumps(
+            {
+                "n": "1",
+                "title": "A thread",
+                "url": "https://example.invalid/1",
+                "body": "some prose about botocore",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return build_documents("testpack", load_sources(tmp_path / "sources.yaml"), data)

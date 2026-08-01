@@ -205,3 +205,103 @@ def test_mentions_of_a_type_no_rule_covers_are_left_alone(graph, rules):
 
     assert report.total == len(MENTIONS)
     assert "CONCEPT" not in report.by_entity
+
+
+# ----------------------------------------------------------------------
+# A mention with more than one type
+# ----------------------------------------------------------------------
+
+
+def test_a_mention_typed_twice_resolves_under_whichever_fits_best():
+    """The store MERGEs __Entity__ nodes globally on id, so one node ends up
+    carrying every type the model ever gave it — `requests` was labelled both
+    REPOSITORY and PACKAGE. Resolution used to take labels[0], which is Neo4j's
+    ordering and not anybody's decision: 24 package mentions became repositories
+    that way."""
+    from graphpack.resolve.pipeline import _best_across_types
+
+    rules = _rules_for_two_types()
+    index = _index_holding({"Package": {"pypi:requests"}, "Repository": set()})
+
+    entity, rule, match = _best_across_types(["REPOSITORY", "PACKAGE"], "requests", rules, index)
+
+    assert entity == "PACKAGE"
+    assert match is not None and match.canonical_id == "pypi:requests"
+    assert rule.entity == "PACKAGE"
+
+
+def test_the_stronger_method_wins_over_declaration_order():
+    """An exact hit is better evidence of what a mention is than a fuzzy one,
+    whichever rule the pack happened to write first."""
+    from graphpack.resolve.pipeline import _best_across_types
+
+    rules = _rules_for_two_types()
+    index = _index_holding({"Package": {"pypi:requests"}, "Repository": {"gh:psf/requests"}})
+
+    entity, _, match = _best_across_types(["REPOSITORY", "PACKAGE"], "requests", rules, index)
+
+    assert match.method == "exact"
+    assert entity in {"PACKAGE", "REPOSITORY"}
+
+
+def test_a_mention_nothing_resolves_still_reports_a_type():
+    """It has to be counted somewhere, and dropped under a type is information;
+    dropped under no type is a mention that silently vanishes."""
+    from graphpack.resolve.pipeline import _best_across_types
+
+    rules = _rules_for_two_types()
+    index = _index_holding({"Package": set(), "Repository": set()})
+
+    entity, rule, match = _best_across_types(["PACKAGE"], "nowhere", rules, index)
+
+    assert match is None
+    assert entity == "PACKAGE" and rule is not None
+
+
+def _rules_for_two_types():
+    """Two rules over one mention: PACKAGE declared after REPOSITORY on purpose,
+    so declaration order alone would pick the wrong one."""
+    import tempfile
+    import textwrap
+    from pathlib import Path
+
+    from graphpack.resolve.contract import load_rules
+
+    body = textwrap.dedent(
+        """\
+        normalize:
+          slug: [strip, lower]
+        resolve:
+          - entity: REPOSITORY
+            target: Repository
+            id: "gh:psf/{name|slug}"
+            match: "{name|slug}"
+            methods: [exact]
+            on_unresolved: drop
+          - entity: PACKAGE
+            target: Package
+            id: "pypi:{name|slug}"
+            match: "{name|slug}"
+            methods: [exact]
+            on_unresolved: drop
+        """
+    )
+    directory = Path(tempfile.mkdtemp())
+    (directory / "resolve.yaml").write_text(body, encoding="utf-8")
+    return load_rules(directory / "resolve.yaml")
+
+
+class _FakeIndex:
+    def __init__(self, ids):
+        self._ids = ids
+        self.aliases = {}
+
+    def has(self, label, identifier):
+        return identifier in self._ids.get(label, set())
+
+    def match_forms(self, label):
+        return {}
+
+
+def _index_holding(ids):
+    return _FakeIndex(ids)

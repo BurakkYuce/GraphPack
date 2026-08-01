@@ -44,7 +44,7 @@ def _link(session, subject_type, subject, relation, object_type, obj):
 
 
 def test_a_correctly_typed_triple_conforms(graph):
-    _link(graph, "PACKAGE", "requests", "DEPENDS_ON", "PACKAGE", "urllib3")
+    _link(graph, "PACKAGE", "_t_requests", "DEPENDS_ON", "PACKAGE", "_t_urllib3")
 
     report = validate_triples(graph, PACK, CONSTRAINTS)
 
@@ -55,7 +55,7 @@ def test_a_correctly_typed_triple_conforms(graph):
 def test_a_declared_relation_between_the_wrong_types_is_a_violation(graph):
     """The case nothing else catches: `AUTHORED` is a real relation and both
     ends are real entities, but a package does not author anything."""
-    _link(graph, "PACKAGE", "requests", "AUTHORED", "PACKAGE", "urllib3")
+    _link(graph, "PACKAGE", "_t_requests", "AUTHORED", "PACKAGE", "_t_urllib3")
 
     report = validate_triples(graph, PACK, CONSTRAINTS)
 
@@ -70,7 +70,7 @@ def test_a_relation_the_ontology_never_declared_is_counted_apart(graph):
     """An invented relation and a misapplied one are different failures: the
     first says the ontology is incomplete, the second that extraction was
     careless."""
-    _link(graph, "PACKAGE", "requests", "SUPERSEDES", "PACKAGE", "urllib3")
+    _link(graph, "PACKAGE", "_t_requests", "SUPERSEDES", "PACKAGE", "_t_urllib3")
 
     report = validate_triples(graph, PACK, CONSTRAINTS)
 
@@ -84,8 +84,8 @@ def test_an_entity_carrying_several_types_conforms_if_any_pairing_does(graph):
     strict here would report mistakes that are not mistakes."""
     graph.run(
         """
-        MERGE (a:`__Entity__`:PERSON:PACKAGE {pack: $p, id: 'ambiguous'})
-        MERGE (b:`__Entity__`:PACKAGE {pack: $p, id: 'urllib3'})
+        MERGE (a:`__Entity__`:PERSON:PACKAGE {pack: $p, id: '_t_ambiguous'})
+        MERGE (b:`__Entity__`:PACKAGE {pack: $p, id: '_t_urllib3'})
         MERGE (a)-[:MAINTAINS]->(b)
         """,
         p=PACK,
@@ -100,8 +100,8 @@ def test_violations_are_ordered_by_how_often_they_happen(graph):
     """A mistake made two hundred times is a rule worth fixing; one made once
     is noise."""
     for i in range(3):
-        _link(graph, "PACKAGE", f"pkg{i}", "AUTHORED", "PACKAGE", "urllib3")
-    _link(graph, "ISSUE", "issue1", "MAINTAINS", "PACKAGE", "urllib3")
+        _link(graph, "PACKAGE", f"pkg{i}", "AUTHORED", "PACKAGE", "_t_urllib3")
+    _link(graph, "ISSUE", "issue1", "MAINTAINS", "PACKAGE", "_t_urllib3")
 
     report = validate_triples(graph, PACK, CONSTRAINTS)
 

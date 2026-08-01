@@ -19,6 +19,9 @@ from graphpack.eval.runner import run_eval
 
 pytestmark = [pytest.mark.integration, pytest.mark.graph]
 
+#: Keeps test entities out of the namespace a real ingest writes into.
+TEST_ID_PREFIX = "_t_"
+
 PACK = "_graphpack_eval_test"
 
 RULES = textwrap.dedent(
@@ -60,7 +63,14 @@ def graph(neo4j_session):
         )
 
     def mention(document, text, canonical):
-        """One chunk per document, entities MERGEd and shared — as the store does."""
+        """One chunk per document, entities MERGEd and shared — as the store does.
+
+        Ids are prefixed on the way in. The uniqueness constraint the engine
+        creates on `__Entity__.id` is not pack-scoped, so a test entity called
+        "requests" collides with the one a real ingest wrote — which is how
+        these tests started failing the first time the corpus was extracted.
+        """
+        text = TEST_ID_PREFIX + text
         session.run(
             """
             MATCH (c:Package {pack: $p, id: $canonical})
@@ -82,8 +92,8 @@ def graph(neo4j_session):
             "MATCH (x:`__Entity__` {pack: $p, id: $a}), (y:`__Entity__` {pack: $p, id: $b}) "
             "MERGE (x)-[:DEPENDS_ON]->(y)",
             p=PACK,
-            a=a,
-            b=b,
+            a=TEST_ID_PREFIX + a,
+            b=TEST_ID_PREFIX + b,
         )
 
     for text, canonical in (
@@ -159,9 +169,11 @@ def test_a_relation_of_the_wrong_type_is_reported_as_such(graph, rules):
     """A different failure needing a different fix: the pair was related, just
     not as the ontology's DEPENDS_ON."""
     graph.run(
-        "MATCH (x:`__Entity__` {pack: $p, id: 'requests'}), "
-        "(y:`__Entity__` {pack: $p, id: 'certifi'}) MERGE (x)-[:USES]->(y)",
+        "MATCH (x:`__Entity__` {pack: $p, id: $a}), "
+        "(y:`__Entity__` {pack: $p, id: $b}) MERGE (x)-[:USES]->(y)",
         p=PACK,
+        a=TEST_ID_PREFIX + "requests",
+        b=TEST_ID_PREFIX + "certifi",
     )
 
     report = run_eval(graph, PACK, rules)

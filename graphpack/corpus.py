@@ -9,6 +9,13 @@ Every document carries ``metadata["pack"]``. Knowledge-graph extraction copies a
 source node's metadata onto the entities it extracts, which is what lets a later
 pass tell which pack an ``__Entity__`` node came from. Neo4j Community offers a
 single database, so that tag is the only separation there is.
+
+That tag is bookkeeping, and the model must not see it. LlamaIndex prepends
+metadata to a node's text as ``key: value`` lines before sending it anywhere, so
+without the exclusions below the extractor reads ``pack: oss`` as part of the
+document — and duly extracted an entity called "pack: oss", typed PACKAGE, from
+a thread about botocore. Confirmed rather than guessed: no chunk's ``text``
+contains the string, and ``MetadataMode.LLM`` renders it.
 """
 
 from __future__ import annotations
@@ -81,7 +88,20 @@ def build_documents(
         records = [records[i] for i in sorted(chosen)]
         logger.info("Sampled %d document(s) with seed %d", len(records), seed)
 
-    documents = [Document(text=r["text"], doc_id=r["id"], metadata=r["metadata"]) for r in records]
+    documents = [
+        Document(
+            text=r["text"],
+            doc_id=r["id"],
+            metadata=r["metadata"],
+            # Hidden from the model and from the embedding, kept on the node for
+            # the graph store. A pack may hide more of its own metadata; the
+            # pack tag is hidden always, because it is GraphPack's bookkeeping
+            # rather than anything the corpus said.
+            excluded_llm_metadata_keys=r["hidden"],
+            excluded_embed_metadata_keys=r["hidden"],
+        )
+        for r in records
+    ]
     logger.info("Built %d document(s) for pack '%s'", len(documents), pack_name)
     return documents
 
@@ -118,7 +138,12 @@ def _records(
         }
         metadata[PACK_KEY] = pack_name
 
-        yield {"id": doc_id, "text": text, "metadata": metadata}
+        # The pack tag always, plus whatever the pack calls bookkeeping. Only
+        # keys actually present are listed, so a spec naming a field that never
+        # rendered does not carry a phantom exclusion.
+        hidden = [PACK_KEY] + [k for k in spec.hide_from_model if k in metadata]
+
+        yield {"id": doc_id, "text": text, "metadata": metadata, "hidden": hidden}
         produced += 1
         if spec.limit is not None and produced >= spec.limit:
             break

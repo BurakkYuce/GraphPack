@@ -49,7 +49,7 @@ MATCH (e:{ENTITY_LABEL} {{pack: $pack}})
 WHERE any(l IN labels(e) WHERE l IN $entities)
 RETURN elementId(e) AS eid,
        coalesce(e.name, e.id) AS text,
-       [l IN labels(e) WHERE l IN $entities][0] AS entity
+       [l IN labels(e) WHERE l IN $entities] AS entities
 """
 
 _LINK = """
@@ -139,14 +139,21 @@ def resolve_pack(
     provisional: list[dict] = []
 
     for mention in session.run(_MENTIONS, pack=pack_name, entities=rules.entity_labels):
-        entity = mention["entity"]
         text = (mention["text"] or "").strip()
-        rule = rules.for_entity(entity)
-        if rule is None or not text:
+        if not text:
+            continue
+
+        # An __Entity__ node accumulates every type the model ever gave it: the
+        # store MERGEs globally on id, so one node ends up labelled both
+        # REPOSITORY and PACKAGE. Taking labels[0] let Neo4j's arbitrary label
+        # order decide which rule ran — 24 package mentions resolved to
+        # repositories that way. Every applicable rule is tried and the best
+        # match wins, which is at least a decision this code makes.
+        entity, rule, match = _best_across_types(mention["entities"], text, rules, index)
+        if rule is None:
             continue
 
         report.mentions[entity] += 1
-        match = _resolve_one(text, rule, rules, index)
         counts = report.by_entity.setdefault(entity, Counter())
 
         if match is not None:
@@ -210,6 +217,47 @@ def _resolve_one(text: str, rule: Rule, rules: ResolveRules, index: BackboneInde
         if match is not None:
             return match
     return None
+
+
+#: How much a resolution is worth, best first. A mention typed both REPOSITORY
+#: and PACKAGE should become whichever the backbone actually knows it as, and an
+#: exact hit is stronger evidence of that than a fuzzy one.
+_METHOD_RANK = {"exact": 0, "alias": 1, "fuzzy": 2}
+
+
+def _best_across_types(
+    entities: list[str], text: str, rules: ResolveRules, index: BackboneIndex
+) -> tuple[str, Rule | None, Match | None]:
+    """Resolve a mention under every type it was given and keep the best answer.
+
+    Returns the type whose rule produced it, so the report still counts a
+    mention once and under the type it was finally read as.
+
+    Ties — two types resolving equally well — go to the pack's declaration
+    order, which is the one ordering a pack author controls. Neo4j's label order
+    is not.
+    """
+    best: tuple[int, str, Rule, Match] | None = None
+    fallback: tuple[str, Rule] | None = None
+
+    for entity in sorted(entities, key=rules.declaration_index):
+        rule = rules.for_entity(entity)
+        if rule is None:
+            continue
+        if fallback is None:
+            fallback = (entity, rule)
+        match = _resolve_one(text, rule, rules, index)
+        if match is None:
+            continue
+        rank = _METHOD_RANK.get(match.method, len(_METHOD_RANK))
+        if best is None or rank < best[0]:
+            best = (rank, entity, rule, match)
+
+    if best is not None:
+        return best[1], best[2], best[3]
+    if fallback is not None:
+        return fallback[0], fallback[1], None
+    return "", None, None
 
 
 def _provisional_id(pack: str, entity: str, text: str, rule: Rule, rules: ResolveRules) -> str:

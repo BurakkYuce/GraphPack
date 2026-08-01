@@ -59,6 +59,20 @@ Deviations from the plan get recorded with the reason. Three so far: constraints
 derived from pack declarations instead of per-pack migrations, `RESOLVED_AS`
 edges instead of separate `(:Mention)` nodes, and no BigQuery.
 
+The evaluation round found two defects and one thing that only looked like one.
+Both defects were upstream of the number being measured — a contaminated prompt
+and an arbitrary label choice — which is the usual place for them: by the time a
+score is low, whatever made it low happened several stages earlier. The false
+lead cost an hour and is written down in [RESULTS.md](RESULTS.md) alongside the
+real ones, because a log line that reads like a fault is itself a fault worth
+fixing, and the next person to chase it should find the answer rather than the
+chase.
+
+It also produced the first number small enough to say nothing: twenty gold
+edges, an interval thirteen points wide either side. Reporting it as "F1 22%"
+would have been true and useless. What the phase actually established is where
+the evaluable signal goes, which is the thing that can be acted on.
+
 A round can find a defect that belongs to an earlier phase, and the visualisation
 round did: drawing tr-law's statutes put their titles on screen for the first
 time, and two of them were sentence fragments carrying another statute's number.

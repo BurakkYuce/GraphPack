@@ -150,9 +150,31 @@ class BackboneIndex:
                     forms[form] = identifier
             self._ids[rule.target] = ids
             self._match_forms[rule.target] = forms
-            logger.info(
-                "Indexed %d %s nodes (%d distinct match forms)", len(ids), rule.target, len(forms)
-            )
+            # "0 match forms" reads like a broken index and is not: exact and
+            # alias both work off the identifier set, which is always built.
+            # Only fuzzy needs the names, so a rule that does not ask for fuzzy
+            # has nothing to build them from and wants nothing built.
+            if "fuzzy" in rule.methods:
+                logger.info(
+                    "Indexed %d %s nodes, %d name(s) for fuzzy matching",
+                    len(ids),
+                    rule.target,
+                    len(forms),
+                )
+                if not forms:
+                    logger.warning(
+                        "%s asks for fuzzy matching but no name could be read from the "
+                        "backbone — check fuzzy_field, which names the property the "
+                        "index is built from",
+                        rule.entity,
+                    )
+            else:
+                logger.info(
+                    "Indexed %d %s identifier(s); %s matches on identity, not names",
+                    len(ids),
+                    rule.target,
+                    rule.entity,
+                )
 
     def has(self, label: str, identifier: str) -> bool:
         return identifier in self._ids.get(label, ())

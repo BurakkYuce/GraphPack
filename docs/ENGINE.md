@@ -129,6 +129,23 @@ Measured together, on llama3.1:8b, M4, 16 GB, one 150-character chunk:
 **Neo4j is Community edition**, which supports exactly one database. Packs share
 `neo4j` and are separated by a `pack` property on every node.
 
+**`strict_schema_validation` is inert on the local path**, and the two facts
+above are why. Triple constraints never reach the extractor, and Ollama has to
+run on `DynamicLLMPathExtractor` — which invents types by design — because the
+schema extractor returns nothing. Set `strict_schema: true`, run 200 documents,
+and 58% of the entity labels written are types the ontology never declared:
+`URL`, `FUNCTION`, `FILE`, `DATE`, `CLASS`. Measured in
+[RESULTS.md](RESULTS.md); `validate-triples` is the only enforcement there is.
+
+**Node metadata is part of the prompt.** LlamaIndex prepends every metadata key
+to a node's text as a `key: value` line before sending it to a model, so a field
+kept for bookkeeping is a field the extractor reads as document content. This
+produced an entity called `pack: oss`, typed `PACKAGE`, out of a thread about
+botocore — confirmed by the fact that no chunk's `text` contains the string
+while `MetadataMode.LLM` renders it. GraphPack excludes the pack tag from both
+the LLM and embedding views, and `hide_from_model` lets a pack exclude more.
+→ `tests/test_corpus.py`
+
 **The graph half of an ingest is all-or-nothing; the vector half is not.** The
 two land at different times, and it matters because only one of them survives an
 interruption.

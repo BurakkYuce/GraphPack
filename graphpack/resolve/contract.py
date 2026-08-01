@@ -84,6 +84,18 @@ class ResolveRules:
     def entity_labels(self) -> list[str]:
         return [rule.entity for rule in self.rules]
 
+    def declaration_index(self, label: str) -> int:
+        """Where a type sits in the pack's own ordering.
+
+        The tie-break when one mention carries several types. Declaration order
+        is the only ordering a pack author controls — Neo4j's label order is
+        arbitrary, and resolution used to follow it.
+        """
+        for index, rule in enumerate(self.rules):
+            if rule.entity == label:
+                return index
+        return len(self.rules)
+
 
 def load_rules(path: Path, aliases_path: Path | None = None) -> ResolveRules:
     """Parse a pack's ``resolve.yaml`` and its alias table."""

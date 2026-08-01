@@ -31,8 +31,10 @@ contract could say so — so the contract grew a knob. That is the shape the
 thesis predicts a new vertical should have: configuration for the domain, and
 occasionally one general capability the domain was the first to need.
 
-**Status:** phases 0–6 and 8 complete; three packs live. `oss` corpus extraction
-is running, and phase 7's benchmark numbers wait on it.
+**Status:** phases 0–8 complete except phase 7's benchmark run. Three packs
+live; the `oss` corpus is extracted, resolved and measured — see
+[docs/RESULTS.md](docs/RESULTS.md), which reports what the numbers can and
+cannot support.
 
 ## Quickstart
 

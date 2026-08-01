@@ -159,6 +159,11 @@ class CorpusSpec:
     id: str
     text: str
     metadata: dict[str, str] = field(default_factory=dict)
+    #: Metadata the model should not read. LlamaIndex prepends every metadata
+    #: key to the text as a ``key: value`` line, so a field kept for the graph —
+    #: a URL, a state flag — is also a line the extractor tries to find entities
+    #: in. The pack tag is hidden without being listed; these are the pack's own.
+    hide_from_model: tuple[str, ...] = ()
     where: dict[str, dict[str, str]] = field(default_factory=dict)
     limit: int | None = None
 
@@ -338,6 +343,7 @@ def _parse_corpus(item: Any, path: Path, index: int) -> CorpusSpec:
         id=str(item["id"]),
         text=str(item["text"]),
         metadata=_str_map(item.get("metadata"), f"{where}: metadata"),
+        hide_from_model=tuple(str(k) for k in (item.get("hide_from_model") or ())),
         where=_conditions(item.get("where"), where),
         limit=_opt_int(item.get("limit")),
     )

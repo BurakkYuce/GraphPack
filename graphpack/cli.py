@@ -700,10 +700,9 @@ def eval_command(
         console.print(f"\n[bold]{result.task.describes}[/bold]")
 
         if not scores.gold:
-            console.print(
-                "[yellow]No gold edges.[/yellow] Either no document mentions two related "
-                "entities, or resolution linked too few mentions to find any pair."
-            )
+            from graphpack.eval.runner import why_no_gold
+
+            console.print(f"[yellow]No gold edges.[/yellow] {why_no_gold(diagnostics, pack)}")
             console.print(f"  [dim]{diagnostics}[/dim]")
             continue
 

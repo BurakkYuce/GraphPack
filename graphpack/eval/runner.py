@@ -160,3 +160,30 @@ def _diagnose_misses(
         examples.setdefault(cause, []).append(detail)
 
     return causes, examples
+
+
+def why_no_gold(diagnostics: dict, pack: str) -> str:
+    """Name the fault behind an empty gold set.
+
+    Three different things produce no gold, and they send the reader to three
+    different places. The diagnostics already distinguish them; listing every
+    possibility each time made a run that had simply never happened look like a
+    resolution problem.
+    """
+    resolved_documents = diagnostics.get("documents_with_resolved_entities", 0)
+    resolvable = diagnostics.get("resolvable_entities", 0)
+
+    if not resolved_documents and not resolvable:
+        return (
+            "Nothing has been through extraction and resolution yet — "
+            f"run `graphpack ingest {pack}` then `graphpack resolve {pack}`."
+        )
+    if not resolvable:
+        return (
+            "Extraction produced mentions but resolution linked none of them to "
+            "the backbone. Check resolve.yaml before reading anything else."
+        )
+    return (
+        "Mentions resolved, but no document mentions two entities the backbone "
+        "relates — so there is no pair to score."
+    )

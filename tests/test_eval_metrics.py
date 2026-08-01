@@ -103,3 +103,41 @@ def test_the_report_line_shows_the_interval_beside_the_score():
 
     assert "P " in line and "R " in line and "F1" in line
     assert "[" in line and "]" in line
+
+
+# ----------------------------------------------------------------------
+# What an empty gold set means
+# ----------------------------------------------------------------------
+
+
+def test_a_pipeline_that_never_ran_says_so():
+    """The commonest reason for no gold, and the one the old message buried
+    under two others: nothing has been ingested. A reader sent to check
+    resolve.yaml when the answer is `graphpack ingest` loses an afternoon."""
+    from graphpack.eval.runner import why_no_gold
+
+    reason = why_no_gold({"documents_with_resolved_entities": 0, "resolvable_entities": 0}, "oss")
+
+    assert "graphpack ingest oss" in reason
+
+
+def test_mentions_that_resolved_to_nothing_point_at_resolve_yaml():
+    from graphpack.eval.runner import why_no_gold
+
+    reason = why_no_gold({"documents_with_resolved_entities": 12, "resolvable_entities": 0}, "oss")
+
+    assert "resolve.yaml" in reason
+
+
+def test_a_corpus_that_simply_never_pairs_them_is_its_own_answer():
+    """Extraction and resolution both worked; the corpus just does not discuss
+    two related entities in one document. That is a fact about the corpus, not
+    a fault to go fixing."""
+    from graphpack.eval.runner import why_no_gold
+
+    reason = why_no_gold(
+        {"documents_with_resolved_entities": 40, "resolvable_entities": 130}, "oss"
+    )
+
+    assert "no pair to score" in reason
+    assert "ingest" not in reason

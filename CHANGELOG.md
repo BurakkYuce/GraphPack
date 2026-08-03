@@ -27,11 +27,12 @@ verified by CI on every push.
 
 | | |
 |---|---|
-| retrieval, MultiHop-RAG, 2,556 queries | MRR@10 **0.759**, Hit@1 0.631, Hit@10 0.977, ±2 points |
-| extraction, `tr-law` | F1 **81.4%**, precision 97.2%, over 150 gold edges |
+| retrieval, MultiHop-RAG, 2,556 queries | MRR@10 **0.777** hybrid, 0.759 vector; Hit@4 0.953, Hit@10 0.987 |
+| extraction, `tr-law` — `statute_citations` | F1 **80.8%**, precision 97.0%, over 1,242 gold edges from 711 documents, ±1.2 points |
+| extraction, `tr-law` — `article_citations` | F1 **69.6%** over 802 gold edges — scoreable only since resolution learned to follow an extracted edge |
 | extraction, `oss` — `thread_package` | F1 **57.5%**, recall 86.2%, over 94 gold edges |
 | extraction, `oss` — `dependencies` | F1 21.1% over 37 gold edges, ±13 and not offered as a conclusion |
-| graph against text, `bench-wiki` | 26.8% of a traversal's answer is recoverable from the top-30 passages |
+| graph against text | 26.8% recoverable on news, **7.6%** on case law — both clean |
 
 ### Added — making a domain measurable, and making the project handover-ready
 - `domains/_template/` — a complete working pack for a made-up domain, every
@@ -52,6 +53,13 @@ verified by CI on every push.
 - `Scores.precision_ceiling`, and `graphpack eval` prints it when it binds. A
   gold set narrower than what extraction can claim caps precision below 100%,
   and the bare number then reads as an error rate rather than as headroom.
+- `graphpack bench --ingest --hybrid` — ingest and benchmark in one process, so
+  the engine's in-memory BM25 leg exists to be scored. The first hybrid number
+  this project has had.
+- `context:` on a resolve rule: identify a mention through a relation extraction
+  itself claimed. "371. maddesinde" is an article number and 371 of *which*
+  statute is the question; the model's own `HAS_ARTICLE` edge answers it, which
+  is evidence rather than the proximity guess the pack refuses in writing.
 - `hide_from_model` applied to the `oss` corpus. It had existed unused so the
   committed configuration would match the published numbers; a re-run now costs
   four minutes rather than ten hours, so that reason expired.
@@ -86,7 +94,7 @@ verified by CI on every push.
   covering that function passed with the bug in place.
 - `eval.yaml` may declare `tasks: []`. It is a statement — "this pack has no
   extraction metrics" — and the contract had been collapsing it with a missing
-  key. `bench-wiki` had said it for weeks, unheard.
+  key. `bench-wiki` had been saying it since it was written, unheard.
 - `document_edges` without `source_label` fell back to a label no pack writes,
   producing an empty gold set that read as "0 gold edges". Rejected at parse
   time now.

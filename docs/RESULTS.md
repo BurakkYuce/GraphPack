@@ -424,13 +424,14 @@ uv run graphpack resolve tr-law && uv run graphpack eval tr-law
 | extracted entities | — | 5,130 |
 | conforming relations | 100% | **100%** (8,605 of 8,605) |
 | documents carrying gold | 88 of 88 | **711 of 711** |
+| gold edges | 150 | **1,242** |
 | precision | 97.2% [92.1–99.1] | **97.0%** [95.6–97.9] |
 | recall | 70.0% [62.2–76.8] | **69.2%** [66.6–71.7] |
 | interval, precision | ±3.5 points | **±1.2** |
 | interval, recall | ±7.3 points | **±2.6** |
 
 **The scores held to within a point at eight times the data.** Precision 97.2 →
-97.0, recall 70.0 → 69.2, both well inside the old intervals. That is the
+97.0, recall 70.0 → 69.2, F1 81.4 → 80.8, all well inside the old intervals. That is the
 strongest reproducibility evidence in this document, and it is worth putting
 beside oss's `dependencies` task, whose gold set nearly halved between two runs
 of the *same* configuration. Same machinery, same metrics code: one measurement

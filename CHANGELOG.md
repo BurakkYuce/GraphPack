@@ -29,7 +29,7 @@ verified by CI on every push.
 |---|---|
 | retrieval, MultiHop-RAG, 2,556 queries | MRR@10 **0.777** hybrid, 0.759 vector; Hit@4 0.953, Hit@10 0.987 |
 | extraction, `tr-law` — `statute_citations` | F1 **80.8%**, precision 97.0%, over 1,242 gold edges from 711 documents, ±1.2 points |
-| extraction, `tr-law` — `article_citations` | F1 **69.6%** over 802 gold edges — scoreable only since resolution learned to follow an extracted edge |
+| extraction, `tr-law` — `article_citations` | F1 **71.3%** held out (69.6% in-sample) — scoreable only since resolution learned to follow an extracted edge |
 | extraction, `oss` — `thread_package` | F1 **57.5%**, recall 86.2%, over 94 gold edges |
 | extraction, `oss` — `dependencies` | F1 21.1% over 37 gold edges, ±13 and not offered as a conclusion |
 | graph against text | 26.8% recoverable on news, **7.6%** on case law — both clean |
@@ -82,6 +82,12 @@ verified by CI on every push.
   configuration twice gave the same `thread_package` gold set (94, 94) and a
   `dependencies` gold set that nearly halved (66, 37) — so the Wilson interval
   on the second task understates its real uncertainty.
+- **The holdout the pack's own rule demanded.** `tr-law`'s `article_number`
+  normaliser was shaped by reading the corpus it is scored on, which is exactly
+  the trigger `eval.yaml` had written down. Set to 0.3: the task scores *higher*
+  held out (71.3% against 69.6%), so it was not fitted — and the check stays on,
+  because turning it off after a favourable result is what would make it
+  worthless.
 
 ### Fixed
 - `graphpack inspect PACK` scoped nothing but the ontology it compared against.

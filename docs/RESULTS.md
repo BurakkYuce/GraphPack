@@ -445,6 +445,53 @@ Cost: 55 minutes end to end — 7 minutes chunking and embedding, 25 minutes of
 extraction on `gemini-3.5-flash-lite`, and **23 minutes writing the property
 graph**, which is the part nobody budgets for. See ENGINE.md.
 
+### The holdout this pack's own rule demanded
+
+Everything above is scored on the whole corpus, and for one of the two tasks
+that stopped being honest. `domains/oss/eval.yaml` wrote the rule down before
+any of this happened:
+
+> A holdout protects against rules fitted to the data being scored. […] That
+> changes the moment the error analysis feeds back into `aliases.csv` or a
+> normaliser.
+
+That moment arrived with the `context:` work below. Its `article_number`
+normaliser was written by looking at unresolved mentions *in this corpus*, and
+the decision to build the feature at all came from simulating it against these
+documents. So `tr-law` now sets `holdout: 0.3`, split by decision, and both
+numbers are here:
+
+| | whole corpus | held-out 30% |
+|---|---:|---:|
+| `statute_citations` P | 97.0% [95.6–97.9] | 98.0% [95.5–99.2] |
+| `statute_citations` R | 69.2% [66.6–71.7] | 66.0% [61.0–70.6] |
+| `statute_citations` F1 | **80.8%** | 78.9% |
+| `article_citations` P | 63.6% [60.6–66.6] | 67.6% [61.9–72.8] |
+| `article_citations` R | 76.8% [73.8–79.6] | 75.4% [69.7–80.3] |
+| `article_citations` F1 | **69.6%** | **71.3%** |
+| scored on | 711 / 638 documents | 213 / 191 |
+
+**The task under suspicion scores *higher* held out — 71.3% against 69.6%.** So
+the normaliser was not fitted to the documents it is measured on; if anything
+the held-out decisions are slightly easier. Every interval overlaps between the
+two columns, so the honest reading is that the split changed nothing, which is
+the answer the check existed to get.
+
+`statute_citations` drifts down 1.9 points on a third of the data, with a wider
+interval to match. No normaliser was written for it, and nothing here suggests
+one is needed.
+
+**What this does not buy.** A real holdout fixes the split *before* the design.
+This one was applied after, and the design had already seen the whole corpus, so
+the held-out column is a check rather than a clean measurement. What it does
+check is the specific thing at risk: the mentions I actually read are almost all
+in the other 70%. And the normaliser is generic — the first one-to-three digit
+number, which is the shape every article citation in the language has — rather
+than something shaped around particular misses.
+
+The committed configuration keeps `holdout: 0.3`. Turning the check off after it
+came back favourable would be the one move that makes it worthless.
+
 ### What the second task still cannot measure
 
 ```
@@ -872,9 +919,12 @@ question.
 - **`strict_schema` true versus false.** The sweep this phase planned is not
   worth running: on the dynamic extractor the setting is inert, and the section
   above is the evidence.
-- **The holdout.** `eval.yaml` sets `holdout: 0.0` with a note to raise it
-  before error analysis feeds back into `aliases.csv` or a normaliser. Nothing
-  in this phase did: both fixes were defects — a contaminated prompt and an
-  arbitrary label choice — and neither was derived from which gold edges were
-  missed. The holdout stays at 0 and the note stands for the first change that
-  does chase a miss.
+- **The holdout, for `oss` and `bench-wiki`.** Both still sit at `holdout: 0.0`,
+  and the note stands: raise it before error analysis feeds back into
+  `aliases.csv` or a normaliser. Nothing in either pack has: `oss`'s two fixes
+  were defects — a contaminated prompt and an arbitrary label choice — and
+  neither was derived from which gold edges were missed.
+
+  `tr-law` is at 0.3, because it did cross that line and the rule said so. See
+  [The holdout this pack's own rule
+  demanded](#the-holdout-this-packs-own-rule-demanded).

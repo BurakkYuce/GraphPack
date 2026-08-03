@@ -42,5 +42,28 @@ tasks:
     endpoint_label: Article
     directed: true
 
-holdout: 0.0
+# Thirty percent of decisions are held out, and this pack is the reason the
+# other two are not.
+#
+# The rule is written in domains/oss/eval.yaml: a holdout protects against rules
+# fitted to the data being scored, and it becomes necessary "the moment the error
+# analysis feeds back into aliases.csv or a normaliser". That moment happened
+# here. The `article_number` normaliser in resolve.yaml was written for the
+# `context:` block, its shape was taken from looking at unresolved mentions in
+# this corpus, and the decision to build the feature at all came from simulating
+# it against these very documents — 282 of 371 would land, so it was worth
+# building. All true, and all of it read the answers first.
+#
+# So: scored on the held-out 30%, split by decision. What that does *not* buy is
+# a clean measurement, and pretending otherwise would be worse than no holdout.
+# The design saw the whole corpus; a real holdout fixes the split before the
+# design, not after. What it does buy is a check on the specific mentions I read
+# — those are almost all in the other 70%.
+#
+# The mitigating fact, stated so a reader can weigh it: `article_number` extracts
+# the first one-to-three digit number and nothing else. It is not fitted to
+# particular misses; it is the shape every article citation in the language has.
+#
+# RESULTS.md carries both numbers, and says which is which.
+holdout: 0.3
 seed: 0

@@ -288,6 +288,14 @@ allow.
   mentions resolve through a `HAS_ARTICLE` the model asserted, which is evidence
   rather than proximity — but it does mean the resolution rate for that type is
   bounded by extraction quality in a way the other types' is not.
+- **And the rule that made it work was written after reading this corpus.** The
+  `article_number` normaliser's shape came from looking at unresolved mentions,
+  and the decision to build the feature came from simulating it against the
+  documents it is scored on. `tr-law` therefore sets `holdout: 0.3` and the task
+  scores 71.3% held out against 69.6% in-sample — higher, so the rule was not
+  fitted to what it is measured on. A real holdout would have fixed the split
+  before the design; this one is a check, not a clean measurement, and RESULTS.md
+  says so.
 - **One machine for everything local.** M4, 16 GB. Every timing here that is not
   a hosted model is a fact about that machine, and the local extraction quality
   (llama3.1:8b, 17.8% conforming) is a fact about a small model rather than

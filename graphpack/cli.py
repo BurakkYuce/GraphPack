@@ -1082,6 +1082,11 @@ def bench_command(
         "--rerank",
         help="Re-order results with the pack's cross-encoder. Needs a `rerank:` block.",
     ),
+    ceiling: bool = typer.Option(
+        False,
+        "--ceiling",
+        help="Report what fraction of the evidence survives chunking, and score nothing.",
+    ),
 ) -> None:
     """Score the corpus half against a published benchmark's own ground truth.
 
@@ -1134,9 +1139,55 @@ def bench_command(
         err_console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
+    if ceiling:
+        # Before anything else: this reads the store and scores nothing, so it
+        # needs no retriever, no ingest and no minutes of build_system.
+        from graphpack.bench.ceiling import measure
+
+        facts = {fact for q in queries for fact in q.facts}
+        if not facts:
+            err_console.print(
+                f"[red]{loaded.name} has no evidence sentences in its gold.[/red] "
+                f"--ceiling is about chunk-level scoring; this pack's gold names "
+                f"documents only."
+            )
+            raise typer.Exit(code=1)
+        result = measure(loaded.qdrant_collection, facts)
+        console.print(result.line())
+        if result.ratio < 1.0:
+            console.print(
+                f"  [dim]{result.facts - result.present:,} sentence(s) fall across a chunk "
+                f"boundary. No retriever can score those, so a chunk-level recall below "
+                f"{result.ratio:.1%} is not all retrieval's.[/dim]"
+            )
+        return
+
     if limit and sample:
         err_console.print("[red]error[/red] --limit and --sample select differently; pick one.")
         raise typer.Exit(code=1)
+    if ceiling:
+        # Before anything else: this reads the store and scores nothing, so it
+        # needs no retriever, no ingest and no minutes of build_system.
+        from graphpack.bench.ceiling import measure
+
+        facts = {fact for q in queries for fact in q.facts}
+        if not facts:
+            err_console.print(
+                f"[red]{loaded.name} has no evidence sentences in its gold.[/red] "
+                f"--ceiling is about chunk-level scoring; this pack's gold names "
+                f"documents only."
+            )
+            raise typer.Exit(code=1)
+        result = measure(loaded.qdrant_collection, facts)
+        console.print(result.line())
+        if result.ratio < 1.0:
+            console.print(
+                f"  [dim]{result.facts - result.present:,} sentence(s) fall across a chunk "
+                f"boundary. No retriever can score those, so a chunk-level recall below "
+                f"{result.ratio:.1%} is not all retrieval's.[/dim]"
+            )
+        return
+
     if limit:
         queries = queries[:limit]
     if sample:

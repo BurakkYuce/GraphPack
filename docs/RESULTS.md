@@ -969,16 +969,23 @@ paper's name.
 **And part of it is a hard ceiling.** F2 measured that every evidence sentence
 survives 1024-token chunking whole — 981 of 981, a 100% ceiling. At 256 tokens:
 
+```bash
+uv run graphpack bench bench-wiki --ceiling
 ```
-32,877  chunks searched
-   981  distinct evidence sentences
-   895  present whole
-        ceiling on evidence recall: 91.2%
+```
+895 of 981 evidence sentence(s) survive chunking whole in 32,877 chunk(s)
+  — ceiling on evidence recall 91.2%
 ```
 
 Eighty-six sentences now fall across a boundary and can never be found by
 containment. That accounts for about 4 points of the 14-point drop; the other 10
 are the volume argument above.
+
+`--ceiling` is a command rather than the throwaway script it was twice, because
+this measurement has now refuted two hypotheses and the number turns out to
+depend on the configuration in ways nobody predicts. The committed setup — 1024
+tokens with metadata hidden, so different boundaries again — reports **99.9%**:
+one sentence, not zero. Small, and it would have been invisible without asking.
 
 ### The same change moves the two metrics in opposite directions
 
@@ -1051,6 +1058,22 @@ the original prediction should have been about instead of articles reached.
 It also means the win is not free in the way "hide the boilerplate" sounds: part
 of it is simply retrieving more text per result, which a larger `top_k` would
 also buy.
+
+**And it does not generalise, which is worth measuring before anyone assumes it
+does.** The metadata each pack actually embeds, against its own chunk budget:
+
+| pack | metadata tokens/chunk | chunk_size | share of the budget |
+|---|---:|---:|---:|
+| bench-wiki, before | 269 | 1024 | **26%** |
+| bench-wiki, now | 0 | 1024 | 0% |
+| tr-law | 31 | 1536 | 2.0% |
+| oss | 21 | 1024 | 2.1% |
+
+`bench-wiki` was an outlier by an order of magnitude — a full news headline plus
+outlet, category and timestamp on every chunk. The other two spend about a
+fiftieth of their budget on metadata, so the same change would buy them close to
+nothing, and this is a finding about one pack's configuration rather than a
+lesson about GraphRAG.
 
 **Two things worth saying about that one line.** It is the change that unblocked
 the paper's chunk size at all: the splitter charges the metadata string against

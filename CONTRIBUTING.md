@@ -128,6 +128,26 @@ Neo4j Community has a single database and packs are separated by a property. A
 fixture writing bare ids passes on an empty CI database and fails on any machine
 that has actually run an ingest. Prefix fixture ids with the test pack name.
 
+## When you interrupt an ingest
+
+Killing an ingest mid-write can leave a stub node behind — a `Chunk` with an
+empty id, no text and **no pack tag**. Nothing routine removes it: `graphpack
+pack reset` deletes `(n {pack: $pack})`, and an untagged node matches no pack,
+so it survives every reset and then fails the first assertion of every pack's
+`checks.cypher` forever.
+
+`graphpack backbone check <pack>` is what finds it, which is the assertion
+working as designed. Removing it is a one-off:
+
+```cypher
+MATCH (c:Chunk) WHERE c.pack IS NULL AND coalesce(c.id, '') = '' AND NOT (c)--()
+DETACH DELETE c
+```
+
+Check the degree and the properties before deleting anything — the point of the
+assertion is that an untagged node is unattributable, so it is worth looking at
+rather than sweeping away.
+
 ## Reporting a bug
 
 The most useful report names the stage and what it printed. `graphpack doctor`

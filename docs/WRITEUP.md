@@ -66,11 +66,20 @@ that this domain happened to need first. It is not "zero code forever" — it is
 Full numbers, with the commands that produce them, are in
 [RESULTS.md](RESULTS.md). The two that matter here:
 
-**The benchmark works and is well measured.** MultiHop-RAG, all 2,556 queries:
-MRR@10 **0.759**, Hit@1 0.631, Hit@10 0.977, intervals ±2 points. Vector
-retrieval only, because the engine's BM25 leg does not survive a process
-boundary — `bench --ingest --hybrid` now runs both in one process, which is what
-makes the other number obtainable.
+**The benchmark works and is well measured.** MultiHop-RAG, all 2,556 queries,
+vector retrieval: MRR@10 **0.759**, Hit@1 0.631, Hit@10 0.977, intervals ±2
+points.
+
+**And the full-text half finally has a number.** Every figure this project had
+published was the vector leg alone — not by choice, but because the engine's
+BM25 docstore lives in memory on the object that ingested, so a benchmark run as
+a separate command has vectors and nothing else. Doing both in one process
+(`bench --ingest --hybrid`) scores the fusion retriever: MRR@10 **0.777**, Hit@4
+0.909 → **0.953**. Hit@1 does not move at all. Fusion is not finding a better
+first answer; it is pulling more of the right articles into positions two
+through four — which for a multi-hop benchmark, where an answer rests on
+several articles, is the half of the ranking that matters and the half a single
+number hides.
 
 **That 0.759 is not comparable to the paper's 0.586, and this repository said
 otherwise twice.** Both earlier versions claimed the gap was one embedding model
@@ -267,21 +276,22 @@ allow.
   (94 edges) and a `dependencies` gold set that nearly halved (66, then 37). A
   Wilson interval assumes a fixed gold set, so the stated ±13 on that task
   understates its real uncertainty.
-- **Article-level citations score nothing.** The extracted mention is `"371.
-  maddesinde"` and the backbone identifier is `madde:6100/371`: an article
-  number alone identifies nothing, and the statute was in the sentence
-  extraction discarded. Resolving it needs context-dependent resolution, which
-  does not exist yet.
-- **The benchmark is vector-only**, and unreranked.
-- **The ablation covers one pack.** `graphpack ablate bench-wiki` measures how
-  much of a graph answer is recoverable from text alone — 26.8% at top-30, and
-  falling as the answer set grows (75% at eight entities, 12% at fifty-one).
-  The same command on tr-law is confounded by its corpus being a 200-document
-  sample of a 1,578-decision graph, so that number is reported and not used.
-  What none of it measures is whether an end-to-end system *answers* the
-  question; name presence is a lower bound, not an answer.
-- **One machine, one model.** M4, 16 GB, llama3.1:8b. Every timing and much of
-  the extraction quality is a fact about that, not about the design.
+- **Nothing is reranked.** The hybrid figure is fusion of three retrievers, not
+  a cross-encoder over their output, and the published table this project
+  declines to compare against gains its largest jump from exactly that.
+- **The ablation covers two packs and they disagree by a factor of three** —
+  26.8% recoverable on news, 7.6% on case law. Both are clean now, and neither
+  says whether an end-to-end system *answers* the question. Name presence is a
+  lower bound: being in the retrieved text is necessary for a reader to assemble
+  an answer, not sufficient.
+- **Article resolution now leans on the extractor's own edges.** 282 article
+  mentions resolve through a `HAS_ARTICLE` the model asserted, which is evidence
+  rather than proximity — but it does mean the resolution rate for that type is
+  bounded by extraction quality in a way the other types' is not.
+- **One machine for everything local.** M4, 16 GB. Every timing here that is not
+  a hosted model is a fact about that machine, and the local extraction quality
+  (llama3.1:8b, 17.8% conforming) is a fact about a small model rather than
+  about the design.
 
 ## What is actually reusable
 

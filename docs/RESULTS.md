@@ -633,15 +633,47 @@ instead of 24 narrowed it to ±6, again without changing the system.
 - **Vector retrieval only.** The engine's BM25 leg is an in-memory docstore
   belonging to the process that ingested, so a benchmark run as a separate
   command has no full-text half. `LI BM25: get_retriever() returned None` is the
-  engine saying so. `graphpack bench bench-wiki --ingest --hybrid` now does both
-  in one process and scores the fusion retriever, so the number the table above
-  lacks is a command rather than a design change.
+  engine saying so. `graphpack bench bench-wiki --ingest --hybrid` does both in
+  one process and scores the fusion retriever; that comparison is below.
 - `nomic-embed-text`, chunk size 1024, overlap 128, top-30 retrieved.
 - **Chunks are reduced to articles.** Several chunks of one article are one
   result, taking the rank of its best chunk. Counting chunks would make Hit@10 a
   measure of how finely an article was split.
 - **No comparison to the published table is made here**, and the reason is
   worse than it looked. See the next section.
+
+### The full-text half, measured at last
+
+Every benchmark number in this project had been the vector leg alone, and not by
+choice: the engine's BM25 docstore lives in memory on the object that ingested,
+so a `bench` run in a separate process has vectors and nothing else.
+`--ingest --hybrid` does both in one process and scores the fusion retriever —
+vector, BM25 and the property graph together.
+
+```bash
+uv run graphpack pack reset bench-wiki --extraction-only --yes
+uv run graphpack bench bench-wiki --ingest --hybrid
+```
+
+| | vector only | **hybrid** | change |
+|---|---:|---:|---:|
+| Hit@1 | 0.631 | 0.631 | **0.000** |
+| Hit@2 | 0.794 | **0.847** | +0.053 |
+| Hit@4 | 0.909 | **0.953** | +0.044 |
+| Hit@10 | 0.977 | **0.987** | +0.010 |
+| MRR@10 | 0.759 | **0.777** | +0.018 |
+
+**Hit@1 does not move at all, and everything below it does.** Fusion is not
+finding a better first answer; it is pulling more of the right articles into
+positions two through four, where a vector-only ranking had them further down.
+For a multi-hop benchmark — where a query rests on several articles and the
+system needs them all — that is the more useful half of the ranking, and it is
+also the half a single-number summary hides.
+
+Both legs are scored at the same depth. The vector retriever is built per call
+at `--top-k`; the fusion retriever was built during the ingest at whatever depth
+the engine chose, so it is set explicitly before scoring. Without that this table
+would be comparing depths.
 
 ### The published table, and why our number is not above it
 
@@ -824,11 +856,9 @@ question.
 - ~~**tr-law's ablation, unconfounded.**~~ Done: the full corpus is ingested and
   the answer is **7.6%**, against bench-wiki's 26.8%. The sampling was worth
   removing and was not what made the number low.
-- **Hybrid retrieval.** Every benchmark number above is the vector leg alone.
-  `graphpack bench <pack> --ingest --hybrid` now scores the fusion retriever —
-  the command exists because the BM25 docstore lives in the object that
-  ingested, so the two have to happen in one process. The number is a run, and
-  it is not in this document until it has been run.
+- ~~**Hybrid retrieval.**~~ Run: MRR@10 0.759 -> **0.777**, Hit@4 0.909 ->
+  0.953, and Hit@1 unchanged. See [The full-text half, measured at
+  last](#the-full-text-half-measured-at-last).
 - **Run-to-run variance on anything but oss.** Measured there for the first time
   and it mattered: the same configuration twice gave a `dependencies` gold set
   of 66 and then 37. Nothing here says whether tr-law or the benchmark move

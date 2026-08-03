@@ -35,16 +35,29 @@ class SourcesError(Exception):
 
 @dataclass(frozen=True)
 class FetchSpec:
-    """One HTTP acquisition step.
+    """One acquisition step.
 
-    Either a single request (``url`` with no placeholders) or one request per
-    row of an earlier step's output (``for_each``), with the row's fields
+    Usually HTTP: a single request (``url`` with no placeholders) or one request
+    per row of an earlier step's output (``for_each``), with the row's fields
     substituted into the URL.
+
+    Or a named connector. The engine ships readers for fourteen systems —
+    SharePoint, S3, Google Drive, Wikipedia and so on — and ``source`` names
+    one instead of a URL. What it returns still lands in ``out`` as JSONL,
+    which is the point: everything downstream reads rows, so a pack fetching
+    from SharePoint uses exactly the same ``keep``, ``derive``, ``load`` and
+    ``corpus`` blocks as one fetching from an API.
     """
 
     id: str
-    url: str
     out: str
+    url: str = ""
+    #: Connector name, mutually exclusive with ``url``. See ``connectors.py``.
+    source: str = ""
+    #: Connector configuration, passed through. ``${VAR}`` is expanded from the
+    #: environment, so credentials stay out of the pack the same way request
+    #: headers do.
+    config: dict[str, Any] = field(default_factory=dict)
     select: str | None = None
     limit: int | None = None
     for_each: str | None = None
@@ -246,9 +259,33 @@ def _parse_fetch(item: Any, path: Path, index: int) -> FetchSpec:
     where = f"{path}: fetch[{index}]"
     if not isinstance(item, dict):
         raise SourcesError(f"{where} must be a mapping")
-    for required in ("id", "url", "out"):
+    for required in ("id", "out"):
         if not item.get(required):
             raise SourcesError(f"{where} is missing '{required}'")
+
+    url, source = str(item.get("url") or ""), str(item.get("source") or "")
+    if not url and not source:
+        raise SourcesError(f"{where} needs either 'url' or 'source'")
+    if url and source:
+        raise SourcesError(
+            f"{where} has both 'url' and 'source'. A step acquires from one place: "
+            f"'url' makes requests, 'source' drives one of the engine's connectors."
+        )
+    config = item.get("config") or {}
+    if not isinstance(config, dict):
+        raise SourcesError(f"{where}: 'config' must be a mapping")
+    if source:
+        # Re-raised as SourcesError so `packs validate` reports it like every
+        # other thing wrong with this file. A ConnectorError escaping here would
+        # crash the command instead of failing the pack.
+        from graphpack.backbone.connectors import ConnectorError, check_connector
+
+        try:
+            check_connector(source, config, where)
+        except ConnectorError as exc:
+            raise SourcesError(str(exc)) from exc
+    elif config:
+        raise SourcesError(f"{where}: 'config' belongs to a 'source' step, not a 'url' one")
 
     on_error = str(item.get("on_error", "fail"))
     if on_error not in ("fail", "skip"):
@@ -283,7 +320,9 @@ def _parse_fetch(item: Any, path: Path, index: int) -> FetchSpec:
 
     return FetchSpec(
         id=str(item["id"]),
-        url=str(item["url"]),
+        url=url,
+        source=source,
+        config=dict(config),
         out=str(item["out"]),
         select=_opt_str(item.get("select")),
         limit=_opt_int(item.get("limit")),

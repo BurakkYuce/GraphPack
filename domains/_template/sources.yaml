@@ -68,6 +68,31 @@ fetch:
       published: volumeInfo.publishedDate
       description: volumeInfo.description
 
+  # Or not HTTP at all. `source:` names one of the engine's readers — filesystem,
+  # s3, sharepoint, google_drive, onedrive, box, gcs, azure_blob, cmis,
+  # alfresco, web, wikipedia, youtube — and `config:` is passed to it. `${VAR}`
+  # expands from the environment, the same as headers, so credentials stay out
+  # of the pack.
+  #
+  # What it returns lands in `out` as JSONL like every other fetch step: one row
+  # per document, the text under `text` and the reader's own metadata alongside.
+  # That is the point — `keep`, `where`, `derive`, `load` and `corpus` all work
+  # unchanged, so a pack over SharePoint is written the same way as one over an
+  # API. `packs validate` rejects an unknown reader name and missing config.
+  #
+  # A caution earned rather than assumed: several of these readers are in poor
+  # repair. Wikipedia and web both fail outright on this machine, for reasons
+  # inside their own dependencies. Try a small `limit:` before writing a pack
+  # around one.
+  - id: notes
+    source: filesystem
+    config:
+      paths: ["./docs"]
+    out: notes.jsonl
+    keep:
+      text: text
+      path: file_path
+
   # One request per row of another file. `{author_id}` is filled from each row,
   # and every field of that row is merged into the response — which is how the
   # oss pack knows which repository an issue came from.

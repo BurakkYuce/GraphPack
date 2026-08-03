@@ -136,11 +136,51 @@ def run_derive(spec, data_dir: Path, sources: Sources) -> FetchResult:
 
 def _run_step(spec: FetchSpec, data_dir: Path) -> FetchResult:
     target = data_dir / spec.out
+    if spec.source:
+        return _fetch_from_connector(spec, target)
     if spec.for_each:
         return _fetch_per_row(spec, data_dir, target)
     if spec.paginate:
         return _fetch_pages(spec, target)
     return _fetch_once(spec, target)
+
+
+def _fetch_from_connector(spec: FetchSpec, target: Path) -> FetchResult:
+    """Drive one of the engine's readers and write what it returns as rows.
+
+    Rows rather than documents, so `keep`, `where`, `derive`, `load` and the
+    corpus `id` template all keep working — see `connectors.py` for why that
+    matters more than passing the documents straight through.
+
+    `select` and `paginate` are meaningless here: a reader decides its own
+    shape and its own paging, so a pack asking for either is asking for
+    something that will be ignored, and being told is better.
+    """
+    from graphpack.backbone.connectors import ConnectorError, fetch_rows
+
+    if spec.select or spec.paginate or spec.for_each:
+        raise FetchError(
+            f"{spec.id}: 'select', 'paginate' and 'for_each' describe an HTTP response and "
+            f"a connector decides its own shape. Remove them, or use 'url' instead of "
+            f"'source: {spec.source}'."
+        )
+
+    try:
+        rows = fetch_rows(spec.source, spec.config)
+    except ConnectorError as exc:
+        if spec.skips_errors:
+            logger.warning("%s: %s — continuing because on_error is skip", spec.id, exc)
+            rows = []
+        else:
+            raise FetchError(f"{spec.id}: {exc}") from exc
+
+    if spec.keep:
+        rows = [_project(row, spec.keep) for row in rows]
+    if spec.limit is not None:
+        rows = rows[: spec.limit]
+    _write_jsonl(target, rows)
+    logger.info("%s: %d rows -> %s (source: %s)", spec.id, len(rows), spec.out, spec.source)
+    return FetchResult(spec.id, target, len(rows))
 
 
 def _fetch_pages(spec: FetchSpec, target: Path) -> FetchResult:

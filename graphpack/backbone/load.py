@@ -119,8 +119,8 @@ def ensure_constraints(session, sources: Sources) -> list[str]:
     # one pack sharing an identifier is unusual but not incoherent, and it is
     # not this index's business to forbid it.
     statements.append(
-        f"CREATE INDEX graphpack_shared_identity IF NOT EXISTS "
-        f"FOR (n:{SHARED_LABEL}) ON (n.pack, n.id)"
+        f"CREATE INDEX graphpack_backbone_identity IF NOT EXISTS "
+        f"FOR (n:`{SHARED_LABEL}`) ON (n.pack, n.id)"
     )
     for statement in statements:
         session.run(statement)
@@ -308,14 +308,21 @@ def _identity(template: str, row: dict[str, Any], sources: Sources) -> str | Non
 #: the database once per batch. Measured on oss: batches climbing from 15
 #: seconds to nearly two minutes, and half an hour to load 25,385 edges.
 #:
-#: One shared label fixes it, and the index for it was already there —
-#: migration 002 creates `(pack, id)` on `Thing`, and until now nothing carried
-#: the label. See migration 003, which backfills it.
-SHARED_LABEL = "Thing"
+#: One shared label fixes it. Named with dunders on purpose: `_check_identifier`
+#: rejects a pack label that does not match `[A-Za-z][A-Za-z0-9_]*`, so no pack
+#: can declare this one and collide with it.
+#:
+#: It was `Thing` for one commit, which collided immediately — a test pack
+#: declares a label by that name, and the per-label uniqueness constraint could
+#: not be created because this index already existed on it. That is also where
+#: the `Thing` index found in a live database had come from: test residue, not a
+#: designed-but-unwired index, which is what an earlier version of this comment
+#: claimed. See migration 004.
+SHARED_LABEL = "__Backbone__"
 
 _MERGE_NODE = f"""
 UNWIND $rows AS row
-MERGE (n:{{label}}:{SHARED_LABEL} {{{{pack: $pack, id: row.id}}}})
+MERGE (n:{{label}}:`{SHARED_LABEL}` {{{{pack: $pack, id: row.id}}}})
 SET n += row.props
 RETURN count(n) AS matched
 """
@@ -329,8 +336,8 @@ RETURN count(n) AS matched
 # that lets the index be used at all. See SHARED_LABEL.
 _MERGE_EDGE = f"""
 UNWIND $rows AS row
-MATCH (a:{SHARED_LABEL} {{{{pack: $pack, id: row.start}}}})
-MATCH (b:{SHARED_LABEL} {{{{pack: $pack, id: row.end}}}})
+MATCH (a:`{SHARED_LABEL}` {{{{pack: $pack, id: row.start}}}})
+MATCH (b:`{SHARED_LABEL}` {{{{pack: $pack, id: row.end}}}})
 MERGE (a)-[r:{{type}}]->(b)
 SET r += row.props
 RETURN count(r) AS matched

@@ -1,0 +1,83 @@
+# What this pack knows how to be asked.
+#
+# An intent pairs a way of asking with a way of answering: find the entity the
+# question is about, then walk outward from it. The walking is a Cypher
+# template, and it belongs to the pack because the edges are the pack's.
+#
+# Routing is deterministic where it can be. A pack lists the words its questions
+# actually use; matching them is free and testable. The model is only asked to
+# choose when nothing matches, because an LLM call on every question is the
+# slowest and least predictable step in the loop.
+#
+# The intents worth having are the ones whose answers are *not in the text* —
+# "which authors influenced the people who influenced this one" is two hops of
+# an edge type and appears in no single description. If an intent's answer sits
+# in one paragraph, plain retrieval already had it and the graph earned nothing.
+
+# ----------------------------------------------------------------------
+# lookup — turn a name in the question into candidate entities
+# ----------------------------------------------------------------------
+#
+# Runs before any intent, on every question. Bound parameters: $pack, $needle,
+# $limit. Must return an `id` column; `name` and `label` are used for display.
+#
+# `$pack` is not optional. Neo4j Community has exactly one database, so all
+# packs share it and are separated by this property. A query that omits it
+# answers out of whichever pack happens to hold a matching id — a plausible
+# answer from the wrong graph, which is worse than no answer. `packs validate`
+# rejects a query without it.
+lookup: |
+  MATCH (n {pack: $pack})
+  WHERE n.id = $needle
+     OR toLower(toString(coalesce(n.name, ''))) = toLower($needle)
+     OR toLower(toString(coalesce(n.title, ''))) = toLower($needle)
+  RETURN n.id AS id,
+         toString(coalesce(n.name, n.title, n.id)) AS name,
+         labels(n)[0] AS label
+  LIMIT $limit
+
+intents:
+  - name: books_by_author
+    # Prose, not a label: this is what the model is shown when keyword matching
+    # does not settle the routing, so it has to read as an explanation.
+    description: Which books a given author wrote.
+
+    # The extraction label the question is about. It must be a type the ontology
+    # declares — `packs validate` checks that. Note in fairness that the agent
+    # does not currently read this field; it is required of every pack, so it is
+    # at least held to naming something real.
+    entity: AUTHOR
+
+    # Words your questions actually use. Lower-cased substring match, so include
+    # the inflections your language needs.
+    match: ["wrote", "written by", "books by", "author of"]
+
+    # Bound: $pack, $entity_id. Interpolated: {hops}, {limit} — and only those
+    # two, because Cypher refuses a variable-length bound or a LIMIT as a
+    # parameter. Anything else in braces is rejected: it is either a mistake or
+    # an attempt to build a query out of user input, and neither should reach
+    # the database.
+    #
+    # A Cypher map literal is `{pack: $pack}`, which looks like a placeholder
+    # and is not one. Interpolation is exact replacement of `{hops}` and
+    # `{limit}` for exactly this reason.
+    cypher: |
+      MATCH (a:Author {pack: $pack})<-[:WRITTEN_BY]-(b:Book {pack: $pack})
+      WHERE a.id = $entity_id
+      RETURN b.id AS id, b.title AS name, 'wrote' AS via
+      LIMIT {limit}
+    limit: 25
+
+  # The multi-hop one — the reason a graph is here at all. `hops` is
+  # interpolated into the variable-length pattern.
+  - name: influence_chain
+    description: Which authors this author's work descends from, transitively.
+    entity: AUTHOR
+    match: ["influenced", "influence", "descends", "tradition"]
+    cypher: |
+      MATCH (a:Author {pack: $pack})-[:INFLUENCED_BY*1..{hops}]->(o:Author {pack: $pack})
+      WHERE a.id = $entity_id
+      RETURN DISTINCT o.id AS id, o.name AS name, 'influenced by' AS via
+      LIMIT {limit}
+    hops: 3
+    limit: 25

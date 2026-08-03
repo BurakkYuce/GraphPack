@@ -1,0 +1,201 @@
+# Where records come from, and what they become.
+#
+# Four blocks, in the order they run:
+#
+#   normalize:  named cleaning pipelines, referenced as {field|pipeline}
+#   fetch:      HTTP -> data/*.jsonl                (`graphpack backbone fetch`)
+#   derive:     jsonl -> jsonl, reshaping           (runs with fetch)
+#   load:       jsonl -> Neo4j nodes and edges      (`graphpack backbone load`)
+#   corpus:     jsonl -> documents for the engine   (`graphpack ingest`)
+#
+# The whole file is declarative. If you find yourself wanting a loop or a
+# condition that is not expressible here, that is worth reporting as an issue —
+# the thesis of this project is that the missing piece is usually a general
+# knob rather than domain code.
+
+# ----------------------------------------------------------------------
+# normalize — named pipelines, applied as {field|pipeline}
+# ----------------------------------------------------------------------
+#
+# Available operations:
+#   lower / upper / strip                  no arguments
+#   regex_replace: {pattern:, replace:}    substitution, all matches
+#   regex_extract: {pattern:}              first capture group, or "" if no match
+#
+# The subtlety worth knowing: `regex_extract` yielding "" makes the whole
+# template render empty, and a row whose id renders empty is skipped. That makes
+# it a row filter as well as a cleaner, which is how the oss pack drops
+# non-GitHub URLs without a `where:` block.
+normalize:
+  # An identifier from a display name: "Ursula K. Le Guin" -> "ursula-k-le-guin"
+  slug:
+    - strip
+    - lower
+    - {regex_replace: {pattern: "[^a-z0-9]+", replace: "-"}}
+    - {regex_replace: {pattern: "^-+|-+$", replace: ""}}
+
+  # First four consecutive digits: "First published 1969" -> "1969"
+  year:
+    - {regex_extract: {pattern: "(\\d{4})"}}
+
+# ----------------------------------------------------------------------
+# fetch — HTTP into data/*.jsonl
+# ----------------------------------------------------------------------
+#
+# Fetched files land in the pack's data/ directory and are gitignored: a pack
+# ships the recipe, not the corpus. Commit a data/MANIFEST.txt recording what
+# a run produced (counts, date, any API version) so a later run can be compared.
+fetch:
+  # A plain request. `select` names the key holding the list when the response
+  # is an object wrapping one; omit it when the body is already a JSON array.
+  - id: books
+    url: https://example.invalid/api/books.json
+    select: results
+    out: books.jsonl
+    # Take the first N rows. Useful while iterating; remove for a real run.
+    limit: 500
+    # `keep` trims each record to the fields you name, dotted paths allowed.
+    # Responses are routinely megabytes of things you do not need, and every
+    # field kept is a field that can end up in a prompt (see `corpus` below).
+    keep:
+      id: id
+      title: volumeInfo.title
+      authors: volumeInfo.authors
+      publisher: volumeInfo.publisher
+      published: volumeInfo.publishedDate
+      description: volumeInfo.description
+
+  # One request per row of another file. `{author_id}` is filled from each row,
+  # and every field of that row is merged into the response — which is how the
+  # oss pack knows which repository an issue came from.
+  #
+  #   concurrency:  parallel requests. Be a good citizen; check the rate limit.
+  #   on_error:     `skip` tolerates 404s and rate limits, `fail` stops the run.
+  #                 Prefer `skip` for per-row fetches over a list you do not
+  #                 control, and say so in a comment, because it silently
+  #                 shrinks your corpus.
+  #   headers:      ${VAR} is read from the environment, never committed.
+  - id: author-details
+    url: "https://example.invalid/api/authors/{author_id}"
+    for_each: authors.jsonl
+    out: author-details.jsonl
+    concurrency: 4
+    on_error: skip
+    headers:
+      Authorization: "Bearer ${TEMPLATE_API_TOKEN}"
+
+# ----------------------------------------------------------------------
+# derive — reshape one jsonl into another, no network
+# ----------------------------------------------------------------------
+#
+# Use this when the list you need is implied by data you already have. Asking
+# the source for it a second time only risks the two disagreeing.
+derive:
+  # `explode` turns a list-valued field into one row per element, exposed to
+  # templates as {value}. Here: one row per author credit.
+  - id: authors
+    source: books.jsonl
+    out: authors.jsonl
+    explode: authors
+    fields:
+      author_id: "{value|slug}"
+      name: "{value}"
+    # Drop rows where any named field rendered empty.
+    require: [author_id]
+    # Collapse duplicates on this field — several books share an author.
+    unique: author_id
+
+# ----------------------------------------------------------------------
+# load — jsonl into the graph
+# ----------------------------------------------------------------------
+#
+# Each step is either a `node` or an `edge`, never both. Steps run in order, and
+# an edge whose endpoints do not exist yet loads nothing — so nodes first.
+#
+# Ids are the contract. Everything downstream joins on them: resolve.yaml
+# produces them, eval.yaml joins the corpus to them, retrieval.yaml returns
+# them. Pick a shape with a namespace prefix and keep it stable.
+load:
+  - source: books.jsonl
+    node:
+      label: Book
+      # Note this template. The corpus block at the bottom uses the same one,
+      # character for character, and it has to: `document_edges` joins document
+      # nodes to ingested chunks on id equality. `packs validate` checks it.
+      id: "book:{id}"
+      properties:
+        title: "{title}"
+        year: "{published|year}"
+
+  - source: authors.jsonl
+    node:
+      label: Author
+      id: "person:{author_id}"
+      properties:
+        name: "{name}"
+
+  - source: books.jsonl
+    node:
+      label: Publisher
+      id: "imprint:{publisher|slug}"
+      properties:
+        name: "{publisher}"
+
+  # The gold edge. It comes from metadata, so it is true before any model runs —
+  # which is exactly what makes it usable as ground truth in eval.yaml.
+  - source: books.jsonl
+    explode: authors
+    edge:
+      type: WRITTEN_BY
+      from: "book:{id}"
+      to: "person:{value|slug}"
+
+  - source: books.jsonl
+    edge:
+      type: PUBLISHED_BY
+      from: "book:{id}"
+      to: "imprint:{publisher|slug}"
+
+  # `where:` filters rows before rendering. Both forms take a regex:
+  #   matches:      keep the row when the field matches
+  #   not_matches:  drop the row when it matches
+  - source: books.jsonl
+    where:
+      description: {matches: "\\S"}
+    edge:
+      type: PUBLISHED_BY
+      from: "book:{id}"
+      to: "imprint:{publisher|slug}"
+
+# ----------------------------------------------------------------------
+# corpus — jsonl into documents the engine chunks, embeds and extracts from
+# ----------------------------------------------------------------------
+corpus:
+  - source: books.jsonl
+
+    # The id becomes `ref_doc_id` on every chunk, and is what ties a passage
+    # back to a document. Here it matches the Book node id above, which is what
+    # lets eval.yaml score "what did extraction find in *this* document".
+    id: "book:{id}"
+
+    # A template with no `{`, e.g. `text: description`, renders as that literal
+    # four-word string for every document. An ingest embeds it without
+    # complaint. `packs validate` rejects it; it is called out here because it
+    # cost this project 609 documents of the word "body".
+    text: "{title}\n\n{description}"
+
+    # Metadata is *part of the prompt*. LlamaIndex prepends every key to the
+    # chunk text as `key: value` before the model sees it, so a field kept for
+    # bookkeeping is a field extraction reads as content — that is where an
+    # entity called `pack: oss` typed PACKAGE came from.
+    metadata:
+      title: "{title}"
+      publisher: "{publisher}"
+      url: "{id}"
+
+    # ...so hide the bookkeeping. These stay queryable in the store and are
+    # excluded from both the model's view and the embedding's.
+    hide_from_model: [url]
+
+    where:
+      description: {matches: "\\S"}

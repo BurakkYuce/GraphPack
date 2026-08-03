@@ -1,0 +1,95 @@
+# What kinds of thing exist, and what may be said about them.
+#
+# This file is compiled into the extraction schema: class names become the
+# entity types the model may use, object properties become the relation types,
+# and every property's rdfs:domain / rdfs:range becomes a triple constraint that
+# extraction is validated against. Nothing outside this file can be extracted.
+#
+# Four things the compiler requires, each of which has cost somebody a run:
+#
+#   * Declare classes with `a owl:Class`. `a rdfs:Class` alone compiles to
+#     nothing at all and the pack extracts no entities.
+#   * Declare relations with `a owl:ObjectProperty`, and give every one of them
+#     BOTH rdfs:domain and rdfs:range. A relation missing its range is paired
+#     with every entity type in the ontology; `packs validate` rejects that.
+#   * Names arrive upper-cased. `tpl:written_by` is `WRITTEN_BY` everywhere
+#     downstream — in resolve.yaml, eval.yaml, retrieval.yaml and the graph.
+#   * A class and a property may not share a name. Both reach the model as label
+#     vocabularies, and a shared name makes the extracted type ambiguous.
+#
+# Keep it small. Every type you declare is a type the model will try to use, and
+# a type nothing resolves is a type that adds noise to every measurement. Three
+# classes and three relations is a real pack; twenty of each is a wish list.
+
+@prefix tpl:  <http://example.org/template/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+#################################################################
+#    Classes
+#################################################################
+
+tpl:Book a owl:Class ;
+    rdfs:label "Book" ;
+    rdfs:comment "A published book. Also a document: its description is what the corpus ingests." .
+
+tpl:Author a owl:Class ;
+    rdfs:label "Author" ;
+    rdfs:comment "A person credited with writing a book." .
+
+tpl:Publisher a owl:Class ;
+    rdfs:label "Publisher" ;
+    rdfs:comment "The imprint that published a book." .
+
+#################################################################
+#    Object properties — the relations extraction may claim
+#################################################################
+
+# The relation this pack scores. It is deliberately the one the structured
+# source already states, so gold needs no annotation: the metadata says who
+# wrote each book, and extraction is measured on whether it read the same thing
+# out of the prose.
+tpl:written_by a owl:ObjectProperty ;
+    rdfs:label "written by" ;
+    rdfs:comment "The book was written by this author." ;
+    rdfs:domain tpl:Book ;
+    rdfs:range  tpl:Author .
+
+tpl:published_by a owl:ObjectProperty ;
+    rdfs:label "published by" ;
+    rdfs:comment "The book was published by this imprint." ;
+    rdfs:domain tpl:Book ;
+    rdfs:range  tpl:Publisher .
+
+# A relation between two of the same type is fine, and is the shape the
+# `backbone_edges` gold generator wants. Note what that costs: to score it, one
+# document has to mention *both* ends, which is rarer than it sounds.
+tpl:influenced_by a owl:ObjectProperty ;
+    rdfs:label "influenced by" ;
+    rdfs:comment "The author's work draws on this other author's." ;
+    rdfs:domain tpl:Author ;
+    rdfs:range  tpl:Author .
+
+#################################################################
+#    Datatype properties — what may be said about one entity
+#################################################################
+
+# These become the property lists the extractor is given. Some providers cannot
+# carry them at all — Google's Developer API rejects the schema outright — so
+# GraphPack disables them per provider rather than per pack. See ENGINE.md.
+
+tpl:title a owl:DatatypeProperty ;
+    rdfs:label "title" ;
+    rdfs:domain tpl:Book ;
+    rdfs:range  xsd:string .
+
+tpl:year a owl:DatatypeProperty ;
+    rdfs:label "year" ;
+    rdfs:domain tpl:Book ;
+    rdfs:range  xsd:string .
+
+tpl:name a owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:domain tpl:Author ;
+    rdfs:range  xsd:string .

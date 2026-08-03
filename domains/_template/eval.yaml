@@ -1,0 +1,75 @@
+# How to grade extraction, without anybody annotating anything.
+#
+# The bargain: your corpus already contains its own ground truth. The metadata
+# says who wrote each book; extraction is scored on whether a model reading the
+# description finds the same thing. Nobody labels a corpus, and the gold is
+# independent of the model by construction.
+#
+# It is not free of caveats, and honesty about them is part of the method. Gold
+# built this way covers only what the structured source states: an author the
+# metadata omits is not in the gold, so a model that finds them gets no credit.
+# Recall is measured against what the source knew, not against what is there.
+# Precision is the more honest half. Say this in your pack's comments too.
+#
+# If your domain has no such overlap, write `tasks: []` — that is a valid
+# statement, and `graphpack eval` will say the pack has no extraction metrics
+# rather than print zeros that look like failure.
+
+tasks:
+  # ------------------------------------------------------------------
+  # Choosing the generator is the decision that matters most here.
+  # ------------------------------------------------------------------
+  #
+  # `document_edges` — the document is itself a node, and the backbone states
+  #     what it points at. Gold is (document, target) for every backbone edge
+  #     out of an ingested document. Use this whenever your documents are nodes;
+  #     it is the stronger measurement, because every document with one edge
+  #     contributes gold.
+  #
+  # `backbone_edges` — the document is *not* a node. Gold is (a, b) for every
+  #     backbone edge whose two ends are both mentioned in the same document.
+  #     Use this only when you have to, and know what it costs: it needs two
+  #     related entities in one document, and most documents talk about one
+  #     thing. In the oss pack, 69% of documents mention exactly one package,
+  #     and that generator produced 24 scoreable edges out of 200 documents
+  #     against 150 for the document-shaped one.
+  #
+  # Getting this wrong is quiet. The gold set comes back empty and the run
+  # reports "0 gold edges", which is what a corpus with genuinely no gold also
+  # reports — after however long extraction took. `packs validate` now catches
+  # the two commonest forms of it before you spend that.
+  - name: authorship
+    generator: document_edges
+
+    # The relation as the *ontology* names it — what extraction claims.
+    relation: WRITTEN_BY
+
+    # The relation as the *backbone* names it — where gold comes from. Usually
+    # identical; they differ when your ontology and your structured source word
+    # the same fact differently. Omit it and `relation` is used for both.
+    backbone_relation: WRITTEN_BY
+
+    # document_edges only: the label your corpus documents carry as nodes. The
+    # join is `document.id = chunk.ref_doc_id`, so this label's id template and
+    # the corpus id template in sources.yaml must be the same template.
+    source_label: Book
+
+    # The label the far end must carry for a pair to count.
+    endpoint_label: Author
+
+    # Is direction part of the claim? "A wrote B" and "B wrote A" are different
+    # claims, so yes. Set false only for genuinely symmetric relations, where
+    # penalising a model for guessing a direction the sentence never stated
+    # measures nothing.
+    directed: true
+
+# Fraction of subjects withheld from scoring, held out by first endpoint rather
+# than by pair — rules are written about entities, so splitting pairs of the
+# same subject would leak the thing the split exists to isolate.
+#
+# Zero is honest only while no rule has been fitted to this data. The moment you
+# read an error report and add a row to aliases.csv, it stops being honest: set
+# this to 0.3 before that change, and say in your write-up which numbers came
+# from which side.
+holdout: 0.0
+seed: 0

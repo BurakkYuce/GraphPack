@@ -1,0 +1,26 @@
+entity,surface,id,note
+# Surface forms that map to an identifier no string distance would find.
+#
+# Columns: the extraction label, the string as it appears in prose, the
+# canonical id it means, and an optional note. Lines starting with `#` are
+# comments; the header row is required.
+#
+# This table is for the cases where the mention and the identifier share no
+# characters worth matching — an abbreviation, an initialism, a name in another
+# script, a title used instead of a number. Anything a normaliser or a fuzzy
+# threshold can reach should be handled there instead, because a rule
+# generalises to mentions you have not seen and a row here does not.
+#
+# Where these rows come from matters for honesty. Grow the table by reading the
+# unresolved sample that `graphpack resolve` prints — but the moment you do, the
+# table has been fitted to the corpus you are about to score, so set `holdout`
+# in eval.yaml before the first such row and say which numbers came from which
+# side.
+#
+# `packs validate` does not check these ids against the backbone. A row naming
+# an id no load step produces silently links nothing — the oss pack had exactly
+# that for a while, pointing at `src:verge` where the loader wrote
+# `src:the-verge`. Check yours against a loaded graph.
+AUTHOR,Le Guin,person:ursula-k-le-guin,Surname alone; no fuzzy threshold reaches the full name safely.
+AUTHOR,UKL,person:ursula-k-le-guin,Initialism used by readers and by no metadata field.
+PUBLISHER,OUP,imprint:oxford-university-press,

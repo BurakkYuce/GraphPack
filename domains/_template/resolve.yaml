@@ -1,0 +1,63 @@
+# From what the model wrote down to what the graph calls it.
+#
+# Extraction produces mentions: strings a model found in prose. "Le Guin",
+# "Ursula K. Le Guin", "U.K. LeGuin" are three mentions of one Author node.
+# Resolution is the pass that links them, and it runs *separately* from ingest
+# on purpose — rules change often, extraction takes hours, and coupling the two
+# means every rule change costs another run. `graphpack resolve <pack>` re-runs
+# in seconds and is idempotent.
+#
+# Rules are tried in the order the `methods` list gives, and the first that
+# succeeds wins. That ordering is the whole design: an exact match is a fact and
+# a fuzzy match is a guess, and the report counts them separately so you can see
+# how much of your resolution rate is guessing.
+
+# Same operations as sources.yaml. Repeat the pipelines you need — the two files
+# are read independently, so a pack can normalise one way when building the
+# backbone and another way when matching against it.
+normalize:
+  slug:
+    - strip
+    - lower
+    - {regex_replace: {pattern: "[^a-z0-9]+", replace: "-"}}
+    - {regex_replace: {pattern: "^-+|-+$", replace: ""}}
+
+resolve:
+  # One rule per extracted entity type you want linked. A type with no rule is
+  # left alone rather than counted as a failure — not everything a model finds
+  # has a canonical form, and charging the resolution rate for that would make
+  # it depend on how much of the ontology you happened to cover. `packs
+  # validate` still lists the uncovered types, so an omission is visible.
+  - entity: AUTHOR          # extraction label, upper-cased from the ontology
+    target: Author          # backbone node label to resolve against
+    id: "person:{name|slug}"  # the canonical id this rule builds
+
+    # What to compare the mention against. Omit it and `id` is used, which is
+    # usually what you want; give it when the human-readable form differs from
+    # the identifier.
+    match: "{name|slug}"
+
+    methods: [exact, alias, fuzzy]
+
+    # Only for `fuzzy`. Below ~90 this starts linking genuinely different names,
+    # and every one it gets wrong becomes a false fact in the graph that reads
+    # exactly like a true one. Raise it if your names are short.
+    fuzzy_threshold: 93
+
+    # What to do with a mention nothing matched:
+    #   drop         forget it. Right when the backbone is authoritative and
+    #                anything outside it is noise.
+    #   provisional  keep it as a `Provisional` node. Right when the backbone is
+    #                a sample and the mention may be a real thing you have not
+    #                loaded — you can then count what you are missing.
+    on_unresolved: provisional
+
+  # Declaration order is also the tie-break. An `__Entity__` node accumulates
+  # every label the model ever gave it — the store MERGEs globally on id — so
+  # one node can be both AUTHOR and PUBLISHER. Every applicable rule is tried
+  # and the best match wins; where two tie, the rule declared first wins.
+  - entity: PUBLISHER
+    target: Publisher
+    id: "imprint:{name|slug}"
+    methods: [exact, alias]
+    on_unresolved: drop

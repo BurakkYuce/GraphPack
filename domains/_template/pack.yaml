@@ -1,0 +1,84 @@
+# A pack you can copy. Nine files, all of them commented, none of them Python.
+#
+# This is a working pack for a made-up domain — books, their authors, and their
+# publishers — chosen because everyone already knows its shape and because it
+# has the three properties a pack needs to be worth building:
+#
+#   1. a *structured* half nobody has to annotate. Who wrote a book is published
+#      metadata, so it can be loaded deterministically and become ground truth.
+#   2. an *unstructured* half. The description text says things the metadata does
+#      not, in prose, which is what extraction has to read.
+#   3. the two overlap. The metadata already states what a correct extraction
+#      would find, so the corpus grades itself and nobody labels anything.
+#
+# If your domain has all three, a pack will work. If it has only the second,
+# you can still ingest and retrieve — you just cannot score extraction without
+# writing annotations, and that is a different project.
+#
+# Nothing here reaches the network: the fetch URL is example.invalid on purpose.
+# `graphpack packs validate _template` passes, which is the point — it is the
+# skeleton, kept honest by CI rather than by somebody remembering to update it.
+# `graphpack backbone fetch _template` will fail, and should.
+#
+# To start your own: copy this directory, rename it, change `name` below to
+# match the directory, and work down the files in the order README.md lists.
+
+# Must equal the directory name. Also cannot be `sample`, `default`, `none` or
+# empty — the engine short-circuits those to a built-in schema before it ever
+# looks at yours, and your ontology would be silently ignored.
+name: _template
+version: 0.1.0
+
+# Advisory only: shown as a column by `graphpack packs list`. Nothing branches
+# on it, and in particular no tokeniser or normaliser reads it.
+lang: en
+
+# Parsed, and currently read by nothing. Kept because a pack should be able to
+# say what its ids look like; noted here so you do not go looking for its effect.
+id_prefix: tpl
+
+description: >
+  A template pack. Books, authors and publishers, with a corpus of book
+  descriptions — the smallest thing that exercises every part of the contract.
+
+extraction:
+  # Set false when every edge in your graph comes from structured data and the
+  # text has nothing left to find. The corpus is still chunked, embedded and
+  # indexed; only the model pass is skipped. bench-wiki does this.
+  extract: true
+
+  # Discard anything the model produces that the ontology does not declare.
+  #
+  # This flag alone does *not* constrain a local model: on the dynamic extractor
+  # — which ollama must use — nothing validates and the flag is inert. See
+  # docs/ENGINE.md. GraphPack installs the constraints itself on the schema path.
+  strict_schema: true
+
+  # Upper bound per chunk. Too low silently truncates a dense passage; too high
+  # invites the model to pad. 20 is a reasonable start.
+  max_triplets_per_chunk: 20
+
+  # Choose from your documents' length and structure, not from a default. Long
+  # documents with self-contained paragraphs take a smaller chunk; documents
+  # where a fact spans pages take a larger one and more overlap.
+  chunk_size: 1024
+  chunk_overlap: 128
+
+# Leave null to inherit the engine's configured provider, which is what `.env`
+# and `graphpack doctor` set up. Override per pack only when the pack genuinely
+# needs a different model — and say why, because it makes its numbers
+# incomparable with the other packs'.
+llm:
+  provider: null
+  config: {}
+
+embedding:
+  kind: null
+  model: null
+  dimension: null
+
+stores:
+  # Packs share one Neo4j database (Community edition has exactly one) and are
+  # separated by a `pack` property on every node. Vectors are separated properly,
+  # by collection, so give yours its own name.
+  qdrant_collection: template_chunks

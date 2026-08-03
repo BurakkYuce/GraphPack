@@ -281,3 +281,79 @@ def test_a_release_needs_both_a_package_and_a_version(oss, mention, expected):
     rule = oss.for_entity("RELEASE")
 
     assert apply(rule.id, mention, oss.pipelines) == expected
+
+
+# ----------------------------------------------------------------------
+# Resolving through a relation extraction claimed
+# ----------------------------------------------------------------------
+
+
+def _with_context(tmp_path, context: str):
+    (tmp_path / "resolve.yaml").write_text(
+        textwrap.dedent(
+            f"""\
+            normalize:
+              number: [{{regex_extract: {{pattern: "(\\\\d+)"}}}}]
+            resolve:
+              - entity: ARTICLE
+                target: Article
+                id: "madde:{{name}}"
+                context: {context}
+            """
+        ),
+        encoding="utf-8",
+    )
+    return load_rules(tmp_path / "resolve.yaml")
+
+
+def test_a_context_block_is_parsed(tmp_path):
+    rules = _with_context(
+        tmp_path, '{via: HAS_ARTICLE, from: STATUTE, id: "madde:{source}/{name|number}"}'
+    )
+
+    context = rules.rules[0].context
+    assert (context.via, context.source) == ("HAS_ARTICLE", "STATUTE")
+
+
+def test_a_context_id_that_ignores_the_source_is_rejected(tmp_path):
+    """Without `{source}` this builds the same identifier the rule's own methods
+    already failed on, so it would resolve nothing and look like a feature."""
+    with pytest.raises(ResolveError, match="must use '{source}'"):
+        _with_context(tmp_path, '{via: HAS_ARTICLE, from: STATUTE, id: "madde:{name}"}')
+
+
+def test_a_pipeline_on_the_source_counts_as_using_it(tmp_path):
+    """`{source|statute_number}` is the ordinary form — the canonical id is
+    `kanun:5718` and the identifier wants 5718. An earlier version of this check
+    matched the bare `{source}` only, and an earlier version of the *renderer*
+    substituted it by string replacement, which silently resolved 0 of 543
+    mentions where 282 were available."""
+    rules = _with_context(
+        tmp_path, '{via: HAS_ARTICLE, from: STATUTE, id: "madde:{source|number}/{name|number}"}'
+    )
+
+    assert rules.rules[0].context.id == "madde:{source|number}/{name|number}"
+
+
+def test_context_needs_all_three_keys(tmp_path):
+    with pytest.raises(ResolveError, match="context is missing"):
+        _with_context(tmp_path, "{via: HAS_ARTICLE, from: STATUTE}")
+
+
+def test_context_rejects_keys_it_does_not_know(tmp_path):
+    with pytest.raises(ResolveError, match="unknown key"):
+        _with_context(
+            tmp_path,
+            '{via: HAS_ARTICLE, from: STATUTE, id: "madde:{source}", threshold: 90}',
+        )
+
+
+def test_a_pipeline_used_only_by_the_context_template_must_exist(tmp_path):
+    (tmp_path / "resolve.yaml").write_text(
+        'resolve:\n  - {entity: A, target: T, id: "x:{name}", '
+        'context: {via: V, from: S, id: "x:{source|nope}"}}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ResolveError, match="undefined normalize pipeline"):
+        load_rules(tmp_path / "resolve.yaml")

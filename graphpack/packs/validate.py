@@ -365,11 +365,34 @@ def _check_resolve(pack: Pack, result: ValidationResult) -> None:
     except OntologyError:
         return  # already reported
 
+    try:
+        schema = compile_ontology(pack.ontology_path)
+    except OntologyError:
+        return  # already reported
+    relations = set(schema.relations)
+
     for rule in rules.rules:
         if rule.entity not in declared:
             result.errors.append(
                 f"resolve.yaml: rule for '{rule.entity}', which the ontology does not declare "
                 f"(it has {', '.join(sorted(declared))})"
+            )
+        if not rule.context:
+            continue
+        # A context block follows an *extracted* relation between two extracted
+        # types. Naming a relation or a type the ontology does not declare means
+        # following an edge extraction can never produce, which resolves nothing
+        # and looks exactly like a domain where the trick does not apply.
+        if rule.context.via not in relations:
+            result.errors.append(
+                f"resolve.yaml: rule for {rule.entity} resolves through '{rule.context.via}', "
+                f"which the ontology does not declare — extraction cannot produce that edge "
+                f"(it has {', '.join(sorted(relations))})"
+            )
+        if rule.context.source not in declared:
+            result.errors.append(
+                f"resolve.yaml: rule for {rule.entity} takes context from "
+                f"'{rule.context.source}', which the ontology does not declare"
             )
 
     labels = _backbone_labels(pack)

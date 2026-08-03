@@ -22,6 +22,14 @@ normalize:
     - strip
     - {regex_extract: {pattern: "(\\d{3,4})"}}
 
+  # The first number in an article mention. On its own this identifies nothing —
+  # 371 of which statute? — so it is only used by the `context` block below,
+  # where the statute comes from an edge extraction claimed rather than from
+  # whatever the paragraph happened to be discussing.
+  article_number:
+    - strip
+    - {regex_extract: {pattern: "(?<!\\d)(\\d{1,3})(?!\\d)"}}
+
   # An article citation names a statute and an article. Both have to be present:
   # "369. madde" on its own belongs to whichever statute the paragraph was
   # discussing, and that is not something a pattern can recover.
@@ -84,6 +92,27 @@ resolve:
     id: "madde:{name|article_ref}"
     match: "{name|article_ref}"
     methods: [exact]
+
+    # The second pass, for the "369. madde" the comment above refuses to guess
+    # at. It is not a guess: the ontology declares STATUTE HAS_ARTICLE ARTICLE,
+    # and extraction produces those edges. Each one is the model's own claim
+    # about which statute an article belongs to, so following it uses evidence
+    # rather than proximity — and a wrong edge is a wrong extraction, which the
+    # evaluation already measures rather than hides.
+    #
+    # `{source}` is the canonical id the statute end resolved to, `kanun:5718`;
+    # `statute_number` reduces that to 5718 and `article_number` takes the first
+    # number out of the mention. An identifier the backbone does not hold is
+    # left unresolved rather than linked to the nearest thing.
+    #
+    # Measured before it was written: 546 extracted HAS_ARTICLE edges, 371 from
+    # a resolved statute to an unresolved article, and 282 of those build an id
+    # the backbone holds.
+    context:
+      via: HAS_ARTICLE
+      from: STATUTE
+      id: "madde:{source|statute_number}/{name|article_number}"
+
     on_unresolved: drop
 
   - entity: DECISION

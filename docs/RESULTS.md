@@ -467,8 +467,51 @@ What makes this fixable rather than fundamental: extraction produced **546
 `HAS_ARTICLE` edges** from statutes to articles. Those are the model's own
 claims about which statute an article belongs to, not proximity guesses, so
 resolving a bare article through one is a different thing from the heuristic the
-pack refuses. That is the design sketched under "context-dependent resolution"
-and it is not built.
+pack refuses.
+
+### Resolving through a relation extraction claimed
+
+The payoff was measured before anything was written, by simulating what the
+feature would build:
+
+```
+  546  extracted HAS_ARTICLE pairs
+  371  from a statute that resolved to an article that did not
+  282  that would build an id the backbone actually holds
+```
+
+Then built — a `context:` block in `resolve.yaml`, a second pass after the
+rule's own methods — and it resolved **282**, the simulated number exactly.
+
+```yaml
+  - entity: ARTICLE
+    methods: [exact]
+    context:
+      via: HAS_ARTICLE          # the edge extraction produced
+      from: STATUTE             # what the other end must be
+      id: "madde:{source|statute_number}/{name|article_number}"
+```
+
+| | before | after |
+|---|---|---|
+| mentions resolved | 1,276 of 3,050 (41.8%) | **1,558 of 3,050 (51.1%)** |
+| `article_citations` gold | **none** | **802 edges**, 561 of 638 documents |
+| `article_citations` | not scoreable | P 63.6% [60.6–66.6] R 76.8% [73.8–79.6] **F1 69.6%** |
+| `statute_citations` | P 97.0% R 69.2% | **P 97.0% R 69.2%** — unchanged |
+
+The last row is the control. A second pass that moved the first pass's numbers
+would be a different measurement wearing the same name.
+
+**Why this is not the guess the pack refuses.** `resolve.yaml` says attaching a
+bare article to whichever statute was mentioned nearby would manufacture
+citations. It would. This does not do that: the statute comes from an edge the
+model asserted, so a wrong link is a wrong *extraction*, which
+`article_citations` now measures rather than hides. And 261 of the 543 built an
+identifier the backbone does not hold — those stay unresolved rather than being
+linked to the nearest thing.
+
+Precision is capped at 82.9% here for the same structural reason as oss's
+`thread_package`: 802 possible gold pairs against 968 claimed.
 
 **150 gold edges against oss's 20 at the time**, and intervals of ±5 rather than
 ±13. Two things produce that, and only one of them is the model.
@@ -766,12 +809,9 @@ question.
 
 ## What has not been measured
 
-- **Article-level citations.** No gold survives resolution — 483 `ARTICLE`
-  mentions extracted at full corpus size and essentially none resolvable,
-  because a bare "371. madde" identifies nothing without its statute. Extraction
-  did produce 546 `HAS_ARTICLE` edges, which is what would make resolving them
-  a use of the model's own claim rather than the proximity guess the pack
-  refuses. Designed, not built.
+- ~~**Article-level citations.**~~ Scoreable now, through the edge extraction
+  itself claimed: 802 gold edges where there were none, F1 69.6%. See
+  [Resolving through a relation extraction claimed](#resolving-through-a-relation-extraction-claimed).
 - ~~**oss under a gold generator that fits it.**~~ Done — see [Giving oss its
   documents back](#giving-oss-its-documents-back). It was pure configuration and
   it worked: 24 gold edges to 135, ±13 points to ±6. What it does *not* do is

@@ -194,6 +194,8 @@ def resolve_pack(
     _write(session, pack_name, _LINK, resolved)
     _write(session, pack_name, _LINK_PROVISIONAL, provisional)
 
+    _resolve_by_context(session, pack_name, rules, report)
+
     logger.info(
         "Resolved %d/%d mentions for '%s' (%s)",
         report.resolved,
@@ -290,3 +292,98 @@ def _write(session, pack_name: str, query: str, rows: list[dict]) -> int:
         return 0
     record = session.run(query, rows=rows, pack=pack_name).single()
     return int(record["linked"]) if record else 0
+
+
+#: Mentions a rule's methods could not identify, together with what extraction
+#: claimed they belong to and where that claim resolved. The direction is the
+#: relation's own — ``STATUTE HAS_ARTICLE ARTICLE`` points at the article, which
+#: is the unresolved end.
+_CONTEXT_CANDIDATES = """
+MATCH (source:{entity}:{source_label} {{pack: $pack}})-[:{via}]->(target:{entity}:{label} {{pack: $pack}})
+MATCH (source)-[:RESOLVED_AS]->(canonical {{pack: $pack}})
+WHERE NOT (target)-[:RESOLVED_AS]->()
+RETURN elementId(target) AS eid,
+       coalesce(target.name, target.id) AS text,
+       canonical.id AS source_id
+"""
+
+
+def _resolve_by_context(session, pack_name: str, rules: ResolveRules, report) -> None:
+    """Second pass: identify what a mention cannot say on its own.
+
+    Runs after every rule's own methods, over what they left. See
+    ``contract.Context`` for why this is following evidence rather than guessing
+    from proximity — the relation is one extraction claimed, not one inferred
+    from two things being near each other.
+
+    Anything that builds an identifier the backbone does not hold is left
+    unresolved rather than linked to the nearest thing, so a wrong extracted
+    edge costs a miss and never a manufactured fact.
+    """
+    from graphpack.backbone.normalize import render_parts
+
+    for rule in rules.rules:
+        context = rule.context
+        if context is None:
+            continue
+
+        index = BackboneIndex(session, pack_name, [rule], rules.pipelines)
+        rows = session.run(
+            _CONTEXT_CANDIDATES.format(
+                entity=ENTITY_LABEL,
+                source_label=context.source,
+                label=rule.entity,
+                via=context.via,
+            ),
+            pack=pack_name,
+        )
+
+        linked: list[dict] = []
+        considered = missed = 0
+        for row in rows:
+            considered += 1
+            text = (row["text"] or "").strip()
+            if not text:
+                continue
+            # Rendered through the same machinery as every other template, so
+            # `{source|statute_number}` works the way a pack author expects. An
+            # earlier version substituted `{source}` by string replacement and
+            # silently matched nothing when a pipeline was attached to it: 0 of
+            # 543 resolved where 282 should have.
+            candidate, complete = render_parts(
+                context.id,
+                {"name": text, "text": text, "source": row["source_id"]},
+                rules.pipelines,
+            )
+            candidate = candidate.strip() if complete else ""
+            if not candidate or not index.has(rule.target, candidate):
+                missed += 1
+                continue
+            linked.append(
+                {
+                    "eid": row["eid"],
+                    "canonical_id": candidate,
+                    "method": "context",
+                    "score": None,
+                }
+            )
+
+        if not considered:
+            continue
+        _write(session, pack_name, _LINK, linked)
+
+        report.methods["context"] += len(linked)
+        report.methods["drop"] = max(report.methods.get("drop", 0) - len(linked), 0)
+        report.by_entity.setdefault(rule.entity, Counter())["context"] += len(linked)
+        report.by_entity[rule.entity]["drop"] = max(
+            report.by_entity[rule.entity].get("drop", 0) - len(linked), 0
+        )
+        logger.info(
+            "%s: %d of %d unresolved mention(s) identified through %s; %d built an id "
+            "the backbone does not hold and were left unresolved",
+            rule.entity,
+            len(linked),
+            considered,
+            context.via,
+            missed,
+        )

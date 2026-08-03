@@ -313,3 +313,114 @@ class _FakeIndex:
 
 def _index_holding(ids):
     return _FakeIndex(ids)
+
+
+# ----------------------------------------------------------------------
+# Resolving through a relation extraction claimed
+# ----------------------------------------------------------------------
+
+CONTEXT_RULES = textwrap.dedent(
+    """\
+    normalize:
+      number:
+        - strip
+        - {regex_extract: {pattern: "(\\\\d+)"}}
+
+    resolve:
+      - entity: BOOK
+        target: Book
+        id: "book:{name|number}"
+        methods: [exact]
+        on_unresolved: drop
+
+      - entity: CHAPTER
+        target: Chapter
+        id: "chapter:{name|number}"
+        methods: [exact]
+        context:
+          via: HAS_CHAPTER
+          from: BOOK
+          id: "chapter:{source|number}/{name|number}"
+        on_unresolved: drop
+    """
+)
+
+
+@pytest.fixture
+def context_rules(tmp_path):
+    (tmp_path / "resolve.yaml").write_text(CONTEXT_RULES, encoding="utf-8")
+    return load_rules(tmp_path / "resolve.yaml")
+
+
+@pytest.fixture
+def context_graph(neo4j_session):
+    """A backbone of chapters that only a book identifies, and mentions of them.
+
+    `chapter:900/3` is deliberately absent from the backbone: the model claims
+    it, the identifier is well formed, and it must still not be linked. A
+    context pass that resolved it would be manufacturing a citation, which is
+    what the tr-law pack refuses in writing.
+    """
+    neo4j_session.run("MATCH (n {pack: $p}) DETACH DELETE n", p=PACK)
+    neo4j_session.run(
+        """
+        CREATE (:Book {pack: $pack, id: 'book:42', name: '42'})
+        CREATE (:Chapter {pack: $pack, id: 'chapter:42/3', name: '3'})
+        CREATE (b:`__Entity__`:BOOK {pack: $pack, id: $pack + ':b', name: '42'})
+        CREATE (c:`__Entity__`:CHAPTER {pack: $pack, id: $pack + ':c', name: 'chapter 3'})
+        CREATE (b)-[:HAS_CHAPTER]->(c)
+        CREATE (x:`__Entity__`:BOOK {pack: $pack, id: $pack + ':x', name: '900'})
+        CREATE (y:`__Entity__`:CHAPTER {pack: $pack, id: $pack + ':y', name: 'chapter 3'})
+        CREATE (x)-[:HAS_CHAPTER]->(y)
+        """,
+        pack=PACK,
+    )
+    yield neo4j_session
+    neo4j_session.run("MATCH (n {pack: $p}) DETACH DELETE n", p=PACK)
+
+
+def test_a_mention_that_identifies_nothing_alone_resolves_through_its_edge(
+    context_graph, context_rules
+):
+    """ "chapter 3" is chapter 3 of *what*. The book is not in the text of the
+    mention; it is on the far end of a relation extraction produced, which makes
+    following it evidence rather than a guess about what was nearby."""
+    resolve_pack(context_graph, PACK, context_rules)
+
+    linked = context_graph.run(
+        "MATCH (e:`__Entity__`:CHAPTER {pack: $p})-[r:RESOLVED_AS]->(c) "
+        "RETURN c.id AS canonical, r.method AS method",
+        p=PACK,
+    ).data()
+
+    assert linked == [{"canonical": "chapter:42/3", "method": "context"}]
+
+
+def test_an_identifier_the_backbone_does_not_hold_is_left_unresolved(context_graph, context_rules):
+    """The second mention builds `chapter:900/3`, which is well formed and does
+    not exist. Linking it to the nearest thing would manufacture a fact; the
+    pass leaves it alone and the report counts it as a miss."""
+    report = resolve_pack(context_graph, PACK, context_rules)
+
+    assert report.methods["context"] == 1
+    assert not context_graph.run(
+        "MATCH (:`__Entity__` {pack: $p})-[:RESOLVED_AS]->(c) "
+        "WHERE c.id = 'chapter:900/3' RETURN c",
+        p=PACK,
+    ).data()
+
+
+def test_the_context_pass_does_not_touch_what_the_methods_already_resolved(
+    context_graph, context_rules
+):
+    """The control. Adding a second pass must not move a number the first pass
+    produced — in tr-law, `statute_citations` scored 97.0/69.2 before and after."""
+    resolve_pack(context_graph, PACK, context_rules)
+
+    books = context_graph.run(
+        "MATCH (e:`__Entity__`:BOOK {pack: $p})-[r:RESOLVED_AS]->(c) "
+        "RETURN c.id AS canonical, r.method AS method ORDER BY c.id",
+        p=PACK,
+    ).data()
+
+    assert books == [{"canonical": "book:42", "method": "exact"}]

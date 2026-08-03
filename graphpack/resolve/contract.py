@@ -12,6 +12,7 @@ a Python package name is lowercase with dashes.
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,40 @@ class ResolveError(Exception):
 
 
 @dataclass(frozen=True)
+class Context:
+    """Resolve a mention through a relation extraction itself claimed.
+
+    Some mentions identify nothing alone. "371. maddesinde" is an article
+    number, and 371 of *which statute* is the whole question — the backbone
+    writes ``madde:6100/371`` and no amount of matching gets there from the
+    number by itself.
+
+    The naive fix is to attach it to whichever statute was mentioned nearby, and
+    the tr-law pack refuses that in writing: it would manufacture citations, and
+    manufactured citations are exactly what the evaluation exists to catch.
+
+    This is the other thing. The ontology declares ``STATUTE HAS_ARTICLE
+    ARTICLE``, extraction produces those edges, and each one is the *model's own
+    claim* about which statute an article belongs to. Following it is using
+    evidence rather than guessing from proximity, and a wrong edge is a wrong
+    extraction — which the evaluation already measures.
+
+    Measured on tr-law before this existed: 546 extracted ``HAS_ARTICLE`` edges,
+    371 of them from a statute that resolved to an article that did not, and 282
+    of those build an identifier the backbone actually holds. The other 89 build
+    one it does not and are dropped rather than mislinked.
+    """
+
+    #: Extracted relation to follow, pointing *at* the unresolved mention.
+    via: str
+    #: Extraction label the other end must carry.
+    source: str
+    #: Identifier template. ``{source}`` is the canonical id the other end
+    #: resolved to; the mention's own text is ``{name}`` and ``{text}``.
+    id: str
+
+
+@dataclass(frozen=True)
 class Rule:
     """How one extracted entity type resolves against the backbone."""
 
@@ -59,6 +94,8 @@ class Rule:
     #: Backbone property holding the human-readable name.
     fuzzy_field: str = "name"
     on_unresolved: str = "drop"
+    #: A second pass for what the methods above could not identify alone.
+    context: Context | None = None
 
     @property
     def keeps_unresolved(self) -> bool:
@@ -172,13 +209,40 @@ def _parse_rule(item: Any, path: Path, index: int) -> Rule:
         fuzzy_threshold=threshold,
         fuzzy_field=str(item.get("fuzzy_field", "name")),
         on_unresolved=policy,
+        context=_parse_context(item.get("context"), where),
     )
+
+
+def _parse_context(raw: Any, where: str) -> Context | None:
+    """Parse a rule's optional ``context:`` block. See ``Context``."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ResolveError(f"{where}: 'context' must be a mapping")
+
+    missing = [key for key in ("via", "from", "id") if not raw.get(key)]
+    if missing:
+        raise ResolveError(f"{where}: context is missing {missing}")
+    unknown = sorted(set(raw) - {"via", "from", "id"})
+    if unknown:
+        raise ResolveError(f"{where}: context has unknown key(s) {unknown}")
+
+    template = str(raw["id"])
+    if not re.search(r"\{source(\|[^}]*)?\}", template):
+        raise ResolveError(
+            f"{where}: the context id template must use '{{source}}' — the canonical id the "
+            "other end resolved to is the whole reason to follow the relation. Without it "
+            "this is the same identifier the methods above already failed on."
+        )
+    return Context(via=str(raw["via"]), source=str(raw["from"]), id=template)
 
 
 def _check_consistency(rules: tuple[Rule, ...], pipelines: dict[str, Pipeline], path: Path) -> None:
     known = set(pipelines)
     for rule in rules:
         referenced = referenced_pipelines(rule.id) | referenced_pipelines(rule.match)
+        if rule.context:
+            referenced |= referenced_pipelines(rule.context.id)
         missing = referenced - known
         if missing:
             raise ResolveError(

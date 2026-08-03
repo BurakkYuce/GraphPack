@@ -642,3 +642,66 @@ def test_an_eval_task_scoring_a_relation_nothing_builds_is_a_note(domains):
     result = validate_pack("widgets")
 
     assert any("no load step builds" in w for w in result.warnings)
+
+
+def test_a_context_relation_the_ontology_does_not_declare_is_an_error(domains):
+    """A context block follows an *extracted* edge. Naming a relation the
+    ontology never declares means following one extraction cannot produce — it
+    resolves nothing and looks exactly like a domain where the trick does not
+    apply."""
+    domains(
+        "widgets",
+        resolve=textwrap.dedent(
+            """\
+            resolve:
+              - entity: WIDGET
+                target: Widget
+                id: "w:{name}"
+                context: {via: TELEPATHY, from: FACTORY, id: "w:{source}/{name}"}
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("resolves through 'TELEPATHY'" in e for e in result.errors)
+
+
+def test_a_context_source_the_ontology_does_not_declare_is_an_error(domains):
+    domains(
+        "widgets",
+        resolve=textwrap.dedent(
+            """\
+            resolve:
+              - entity: WIDGET
+                target: Widget
+                id: "w:{name}"
+                context: {via: BUILT_IN, from: GHOST, id: "w:{source}/{name}"}
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("takes context from 'GHOST'" in e for e in result.errors)
+
+
+def test_a_well_formed_context_block_passes(domains):
+    domains(
+        "widgets",
+        resolve=textwrap.dedent(
+            """\
+            resolve:
+              - entity: WIDGET
+                target: Widget
+                id: "w:{name}"
+                context: {via: BUILT_IN, from: FACTORY, id: "w:{source}/{name}"}
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not [e for e in result.errors if "context" in e], result.errors

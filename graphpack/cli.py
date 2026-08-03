@@ -437,6 +437,37 @@ def backbone_check(
         raise typer.Exit(code=1)
 
 
+def _refuse_if_already_ingested(pack, what: str) -> None:
+    """Stop an ingest that would write a second copy of an existing corpus.
+
+    Nothing deduplicates chunks. Qdrant keys on its own point ids, so ingesting
+    over a populated pack embeds every passage again, and a retriever then
+    returns the same text twice under two ids — a ranked list that is *wrong*
+    rather than empty, which is the failure mode this project treats as worse
+    than a crash.
+
+    Two things were learned the expensive way here. This guard lived on
+    ``bench --ingest`` and not on ``ingest``, so a restore run through the
+    unguarded path took bench-wiki to 17,854 points against the 8,927 it should
+    hold. And it counted ``:Chunk`` nodes, which a pack with ``extract: false``
+    never writes — so on bench-wiki, the pack it was written for, it read zero
+    for a full corpus and could not have fired either way.
+    """
+    from graphpack.reset import count_qdrant_points
+
+    points = count_qdrant_points(pack.qdrant_collection)
+    if points:
+        err_console.print(
+            f"[red]{pack.name} already holds {points:,} embedded chunk(s).[/red] "
+            f"{what} would write them again, and duplicate passages make retrieval "
+            f"wrong rather than empty.\n"
+            f"  whole corpus: [dim]graphpack pack reset {pack.name} "
+            f"--extraction-only --yes[/dim]\n"
+            f"  some documents: [dim]graphpack ingest {pack.name} --only <id>[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+
 @app.command("ingest")
 def ingest_command(
     pack: str = typer.Argument(..., help="Pack whose corpus to ingest."),
@@ -494,6 +525,11 @@ def ingest_command(
         raise typer.Exit(code=1)
 
     system = None
+    if not only:
+        # `--only` is exempt: it forgets the named documents first, which is
+        # exactly the deduplication this guard exists for.
+        _refuse_if_already_ingested(loaded, "ingest")
+
     if only:
         # Built here so the forget and the re-ingest talk to the same engine
         # instance, and forgotten before anything is written, so re-running the
@@ -1073,25 +1109,8 @@ def bench_command(
         raise typer.Exit(code=1)
 
     # Before build_system, which takes minutes: a refusal should be immediate.
-    #
-    # Ingesting on top of an existing corpus writes every chunk a second time —
-    # Qdrant keys on its own ids, so the same passage comes back twice and the
-    # ranked list it feeds is wrong in a way no counter here would show.
-    # Refused rather than warned, because the output would otherwise be a
-    # plausible number.
     if ingest:
-        with session_scope() as session:
-            existing = session.run(
-                "MATCH (c:Chunk {pack: $pack}) RETURN count(c) AS n", pack=loaded.name
-            ).single()
-        if existing and existing["n"]:
-            err_console.print(
-                f"[red]{loaded.name} already holds {existing['n']:,} chunk(s).[/red] "
-                f"--ingest would write them again, and duplicate passages make the ranking "
-                f"wrong rather than empty. Run `graphpack pack reset {loaded.name} "
-                f"--extraction-only --yes` first."
-            )
-            raise typer.Exit(code=1)
+        _refuse_if_already_ingested(loaded, "--ingest")
 
     system = build_system(loaded)
 
@@ -1119,7 +1138,13 @@ def bench_command(
     if chunk_level:
         from graphpack.bench.runner import score_chunks
 
-        chunk_scores = score_chunks(system, [q for q in queries if q.gold], top_k, hybrid=hybrid)
+        chunk_scores = score_chunks(
+            system,
+            [q for q in queries if q.gold],
+            top_k,
+            hybrid=hybrid,
+            progress=lambda done, total: console.print(f"  {done}/{total}", style="dim"),
+        )
         table = Table("metric", "value", "95% interval")
         for k in (1, 2, 4, 10):
             low, high = chunk_scores.interval(k)

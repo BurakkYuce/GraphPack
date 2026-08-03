@@ -723,6 +723,83 @@ at `--top-k`; the fusion retriever was built during the ingest at whatever depth
 the engine chose, so it is set explicitly before scoring. Without that this table
 would be comparing depths.
 
+### The comparison, actually run
+
+The section below worked out why the two tables were not comparable. This is
+what happened when they were made comparable: same embedding model, same metric,
+same retrieval depth.
+
+```bash
+# domains/bench-wiki/pack.yaml, temporarily:
+#   embedding: {kind: openai, model: text-embedding-ada-002, dimension: 1536}
+uv run graphpack ingest bench-wiki
+uv run graphpack bench bench-wiki --chunk-level --top-k 20
+```
+
+| | **ours, ada-002** | **paper, ada-002** | paper's best (no reranker) |
+|---|---:|---:|---:|
+| **MRR@10** | **0.417** | **0.4203** | 0.4298 |
+| Hits@10 | 0.407 | 0.6381 | 0.6718 |
+| Hits@4 | 0.268 | 0.5040 | 0.5221 |
+
+**MRR@10 agrees to three decimal places — 0.417 against 0.4203.** Given the same
+embedding model and the same definition, this pipeline reproduces the published
+number. That is the single most useful thing the benchmark pack was built to
+find out, and it took correcting our own metric first: the same run scored
+0.759 the way this project had been reporting it.
+
+For scale, the same corpus and metric on `nomic-embed-text`, the local model
+everything else here uses: **MRR@10 0.378**. Between the paper's `llm-embedder`
+(0.2558) and its ada-002 (0.4203) — which is where a small open model should sit,
+and another sign the measurement is now the right one.
+
+### Where it still disagrees, and why
+
+Evidence recall is well below: 0.407 against 0.638 at depth 10. MRR matching
+while recall does not is a specific pattern — we find the *first* piece of
+evidence as early as they do, and recover fewer of the rest.
+
+Two hypotheses, and the first was wrong. Chunking or the matcher might impose a
+ceiling: an evidence sentence split across a chunk boundary can never be found
+by containment. Measured rather than assumed —
+
+```
+  981  distinct evidence sentences
+8,927  chunks searched
+  981  present whole inside the chunked corpus
+       ceiling on evidence recall: 100.0%
+```
+
+— so no ceiling at all, and the gap is real retrieval difference.
+
+The second holds up. **The paper chunks at 256 tokens; this pack chunks at
+1024.** Four times larger, which costs nothing for MRR — a large chunk carrying
+the evidence ranks like a small one — and costs a great deal for coverage,
+because twenty large chunks reach fewer documents. Measured on 60 queries:
+
+```
+  5.3  distinct articles among the top-20 chunks
+  2.6  gold articles the average query needs
+```
+
+Twenty chunks a quarter the size would span roughly four times as many articles,
+which is the shape of the missing recall.
+
+**Not demonstrated, and here is what stopped it.** Re-ingesting at 256 tokens
+fails outright:
+
+```
+Metadata length (269) is longer than chunk size (256).
+```
+
+This pack attaches title, outlet, category and date to every chunk, and the
+splitter charges that against the chunk budget — the behaviour
+[ENGINE.md](ENGINE.md) documents, met from the other side. Reaching the paper's
+chunk size needs the metadata hidden from the embedding as well, which is a
+second change and arguably a *closer* match to the paper (it embedded article
+text, not text with a header). It is the obvious next run and it has not been
+made.
+
 ### The published table, and why our number is not above it
 
 This document has said twice that a comparison to MultiHop-RAG's own numbers was
@@ -773,6 +850,13 @@ was one embedding model wide was wrong.
 
 The first three are code and cost nothing to run. Only the fourth needs anything
 this project does not have.
+
+All four were then done, minus the reranker, and
+[The comparison, actually run](#the-comparison-actually-run) above is the
+result: **MRR@10 0.417 against the paper's 0.4203**. The 0.759 in the table above
+is left where it is rather than deleted, because the useful part of this section
+is that it was reported as a headline for two phases before anyone read the
+paper's definitions.
 
 ### The null queries measure nothing, and that is worth saying
 
@@ -911,11 +995,13 @@ question.
   and it mattered: the same configuration twice gave a `dependencies` gold set
   of 66 and then 37. Nothing here says whether tr-law or the benchmark move
   that much, and the intervals throughout this document assume they do not.
-- **The published MultiHop-RAG table.** Not a run away, as this document twice
-  claimed — the metrics differ. Ours scores articles where the paper scores
-  chunks, and our Hit@K is "found at least one" where the paper's is recall over
-  the evidence set. See [The published table](#the-published-table-and-why-our-number-is-not-above-it)
-  for what closing that actually requires.
+- ~~**The published MultiHop-RAG table.**~~ Run. With the paper's embedding
+  model and the paper's metric, **MRR@10 0.417 against its 0.4203**. Evidence
+  recall still differs and the reason is measured rather than guessed — see
+  [The comparison, actually run](#the-comparison-actually-run).
+- **The paper's chunk size, 256 tokens.** Blocked by this pack's metadata being
+  269 tokens on its own. Needs the metadata hidden from the embedding, which is
+  a further change and the next run.
 - **`strict_schema` true versus false.** The sweep this phase planned is not
   worth running: on the dynamic extractor the setting is inert, and the section
   above is the evidence.

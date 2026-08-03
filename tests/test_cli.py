@@ -78,3 +78,45 @@ def test_migrate_check_applies_nothing(neo4j_session):
     assert remaining == 0, "--check must not apply anything"
 
     runner.invoke(app, ["migrate"])  # leave the database as we found it
+
+
+@pytest.mark.unit
+def test_ingest_refuses_a_pack_that_already_holds_vectors(domains, monkeypatch):
+    """A second ingest over a populated pack must stop before it writes.
+
+    Nothing deduplicates chunks, so the second copy is silent: retrieval keeps
+    working and returns the same passage twice under two ids. This is asserted
+    against the *vector* count rather than `:Chunk` nodes because a pack with
+    `extract: false` writes no chunk nodes at all — counting those read zero for
+    a full corpus, which is how bench-wiki reached 17,854 points.
+    """
+    domains("widgets")
+    monkeypatch.setattr("graphpack.reset.count_qdrant_points", lambda _c: 8_927)
+    monkeypatch.setattr("graphpack.doctor.run_checks", lambda: [])
+
+    result = runner.invoke(app, ["ingest", "widgets"])
+
+    assert result.exit_code == 1
+    assert "8,927" in result.output
+    # Both ways forward are named, because a bare refusal sends people to reset
+    # the whole corpus when they wanted one document.
+    assert "pack reset" in result.output
+    assert "--only" in result.output
+
+
+@pytest.mark.unit
+def test_ingest_only_is_exempt_from_the_guard(domains, monkeypatch):
+    """`--only` forgets the named documents first, which *is* the dedup."""
+    domains("widgets")
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("--only must not be blocked by the ingest guard")
+
+    monkeypatch.setattr("graphpack.reset.count_qdrant_points", refuse)
+    monkeypatch.setattr("graphpack.doctor.run_checks", lambda: [])
+
+    result = runner.invoke(app, ["ingest", "widgets", "--only", "doc:1"])
+
+    # It fails for its own reasons in a test environment with no services; what
+    # matters is that it was not the guard that stopped it.
+    assert "already holds" not in result.output

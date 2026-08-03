@@ -69,24 +69,48 @@ def delete_extracted_nodes(session, pack_name: str) -> int:
     return int(before)
 
 
-def drop_qdrant_collection(collection: str) -> bool:
-    """Drop the pack's Qdrant collection. Returns False when it did not exist."""
+def _qdrant_client():
     from qdrant_client import QdrantClient
 
     from graphpack.packs.loader import qdrant_config
 
-    config = qdrant_config(collection)
-    client = QdrantClient(
+    config = qdrant_config("")
+    return QdrantClient(
         host=config["host"],
         port=config["port"],
         api_key=config["api_key"],
         https=config["https"],
     )
+
+
+def drop_qdrant_collection(collection: str) -> bool:
+    """Drop the pack's Qdrant collection. Returns False when it did not exist."""
+    client = _qdrant_client()
     try:
         if not client.collection_exists(collection):
             return False
         client.delete_collection(collection)
         return True
+    finally:
+        client.close()
+
+
+def count_qdrant_points(collection: str) -> int:
+    """How many vectors the pack's collection holds. 0 when it does not exist.
+
+    Qdrant, not Neo4j, is where "has this pack been ingested" is actually
+    answerable. `:Chunk` nodes are written by the graph-extraction path, so a
+    pack with `extract: false` has none of them and every count over Neo4j reads
+    zero for a fully ingested corpus — which is how a guard written against
+    Chunk nodes sat over `bench-wiki` without ever being able to fire.
+    """
+    client = _qdrant_client()
+    try:
+        if not client.collection_exists(collection):
+            return 0
+        return client.count(collection, exact=True).count
+    except Exception:  # noqa: BLE001 — an unreachable store is doctor's business
+        return 0
     finally:
         client.close()
 

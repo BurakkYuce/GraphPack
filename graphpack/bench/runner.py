@@ -217,7 +217,9 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
-def score_chunks(system, queries, top_k: int, hybrid: bool = False, ks=(1, 2, 4, 10)):
+def score_chunks(
+    system, queries, top_k: int, hybrid: bool = False, ks=(1, 2, 4, 10), progress=None
+):
     """Score at the granularity MultiHop-RAG uses: chunks, not articles.
 
     A chunk is relevant when it contains one of the query's evidence sentences.
@@ -227,15 +229,28 @@ def score_chunks(system, queries, top_k: int, hybrid: bool = False, ks=(1, 2, 4,
 
     Returns the same ``BenchScores`` shape, so the two can be printed together
     and the difference read off rather than argued about.
+
+    ``progress`` is not decoration. The first version of this function had none,
+    and a run over 2,556 queries wedged on a retrieval that never returned —
+    silent, at 0% CPU, indistinguishable from slow work for seventy minutes. One
+    query failing is now logged and scored as a miss rather than ending the run,
+    for the same reason.
     """
     results = []
-    for query in queries:
+    for index, query in enumerate(queries, start=1):
+        if progress and index % 50 == 0:
+            progress(index, len(queries))
         if not query.facts:
             results.append(QueryResult(question=query.question, ranked=(), gold=frozenset()))
             continue
         wanted = {_normalise(fact): fact for fact in query.facts}
         ranked: list[str] = []
-        for _, text in retrieve_chunks(system, query.question, top_k, hybrid=hybrid):
+        try:
+            chunks = retrieve_chunks(system, query.question, top_k, hybrid=hybrid)
+        except Exception as exc:  # noqa: BLE001 — one bad query is not a bad run
+            logger.warning("Retrieval failed for %r — %s", query.question[:60], exc)
+            chunks = []
+        for _, text in chunks:
             haystack = _normalise(text)
             # A chunk stands for whichever evidence it carries. Naming it by the
             # fact rather than by a chunk id is what lets the same scoring code

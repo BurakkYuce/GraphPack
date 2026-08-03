@@ -114,10 +114,10 @@ class FakeSystem:
 
     class _Retriever:
         def __init__(self, docs, top_k):
-            self.docs, self.top_k = docs, top_k
+            self.docs, self.similarity_top_k = docs, top_k
 
         async def aretrieve(self, question):
-            return [FakeSystem._Node(d) for d in self.docs[: self.top_k]]
+            return [FakeSystem._Node(d) for d in self.docs[: self.similarity_top_k]]
 
     class _Index:
         def __init__(self, docs):
@@ -291,6 +291,19 @@ def test_the_hybrid_leg_is_scored_when_it_is_there():
         "mhr:fused",
         "mhr:vector",
     )
+
+
+def test_both_legs_are_scored_at_the_depth_asked_for():
+    """The vector leg is built per call at the requested depth; the fusion
+    retriever was built during ingest at whatever depth the engine chose.
+    Comparing them without settling that would compare depths."""
+    system = FakeSystem(["v1", "v2", "v3"], hybrid_docs=["h1", "h2", "h3"])
+    system.hybrid_retriever.similarity_top_k = 99  # as the engine left it
+
+    query = BenchQuery("q", frozenset({"h1"}))
+
+    assert run_query(system, query, top_k=2).ranked == ("v1", "v2")
+    assert run_query(system, query, top_k=2, hybrid=True).ranked == ("h1", "h2")
 
 
 def test_retrieval_that_returns_no_identity_is_counted_as_unattributed():

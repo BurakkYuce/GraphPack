@@ -137,6 +137,20 @@ def _retriever(system, top_k: int, hybrid: bool):
             "retrieval only exists in a process that has ingested — run "
             "`graphpack bench <pack> --ingest --hybrid`."
         )
+
+    # The vector leg is constructed per call at the depth asked for; the fusion
+    # retriever was constructed during ingest at whatever depth the engine
+    # configured. Comparing the two at different depths would be a comparison of
+    # depths, so the depth is set here — and said out loud when it cannot be.
+    if hasattr(retriever, "similarity_top_k"):
+        retriever.similarity_top_k = top_k
+    else:
+        logger.warning(
+            "The fusion retriever exposes no similarity_top_k, so this run's depth is "
+            "the engine's rather than the %d asked for. The hybrid and vector numbers "
+            "are then not directly comparable.",
+            top_k,
+        )
     return retriever
 
 

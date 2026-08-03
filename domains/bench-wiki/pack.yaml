@@ -38,6 +38,13 @@ extraction:
   # News articles average 10k characters and are written in short paragraphs
   # that stand alone; a smaller chunk than tr-law's is right, and it keeps the
   # embedding count down over a corpus three times the size.
+  # 1024, and this is now a measurement rather than a guess. MultiHop-RAG's own
+  # chunk size is 256, and once the corpus block hid its metadata from the
+  # embedding that became settable — the splitter had been charging 269 tokens
+  # of metadata against a 256-token budget. Run at both sizes, 256 scored
+  # *worse*: evidence recall@10 0.318 against 0.456, and 86 of 981 evidence
+  # sentences fall across a chunk boundary at 256 where none do at 1024. See
+  # docs/RESULTS.md, "The paper's chunk size, and the diagnosis it refutes".
   chunk_size: 1024
   chunk_overlap: 128
 

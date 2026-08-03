@@ -731,6 +731,11 @@ uv run graphpack pack reset bench-wiki --extraction-only --yes
 uv run graphpack bench bench-wiki --ingest --hybrid
 ```
 
+Both columns are the metadata-embedded configuration, which is what the pack
+carried at the time. The committed pack now hides metadata from the embedding
+and scores 0.731 / 0.747 — see
+[The same change moves the two metrics in opposite directions](#the-same-change-moves-the-two-metrics-in-opposite-directions).
+
 | | vector only | **hybrid** | change |
 |---|---:|---:|---:|
 | Hit@1 | 0.631 | 0.631 | **0.000** |
@@ -850,8 +855,14 @@ because twenty large chunks reach fewer documents. Measured on 60 queries:
 Twenty chunks a quarter the size would span roughly four times as many articles,
 which is the shape of the missing recall.
 
-**Not demonstrated, and here is what stopped it.** Re-ingesting at 256 tokens
-fails outright:
+**This prediction was then run, and it is wrong.** See
+[The paper's chunk size, and the diagnosis it refutes](#the-papers-chunk-size-and-the-diagnosis-it-refutes)
+— 256-token chunks scored *worse*, and the reasoning above turns out to be an
+argument about articles reached, which is the wrong quantity for a metric that
+counts sentences. The paragraph stays as written because a refuted prediction
+that was recorded in advance is worth more than a corrected one.
+
+**What stopped it at the time.** Re-ingesting at 256 tokens failed outright:
 
 ```
 Metadata length (269) is longer than chunk size (256).
@@ -922,6 +933,153 @@ result: **MRR@10 0.417 against the paper's 0.4203**. The 0.759 in the table abov
 is left where it is rather than deleted, because the useful part of this section
 is that it was reported as a headline for two phases before anyone read the
 paper's definitions.
+
+### The paper's chunk size, and the diagnosis it refutes
+
+Two sections above predicted this run and said what it would show. It was run,
+and it showed the opposite.
+
+The prediction, quoted from [Where it still disagrees](#where-it-still-disagrees-and-why):
+
+> The paper chunks at 256 tokens; this pack chunks at 1024. Four times larger,
+> which costs nothing for MRR […] and costs a great deal for coverage, because
+> twenty large chunks reach fewer documents. […] Twenty chunks a quarter the
+> size would span roughly four times as many articles, which is the shape of the
+> missing recall.
+
+**Wrong.** Three configurations, same 500 sampled queries, same depth, all local:
+
+| | MRR@10 | evidence recall@10 | chunks |
+|---|---:|---:|---:|
+| A — 1024, metadata embedded (the published setup) | 0.389 | 0.385 | 8,927 |
+| **C — 1024, metadata hidden from the embedding** | **0.466** | **0.456** | 8,927 |
+| B — 256, metadata hidden (the paper's size) | 0.354 | 0.318 | 32,877 |
+
+Matching the paper's chunk size made retrieval **worse by every measure**.
+
+**Why the reasoning failed.** It was an argument about *articles reached*, which
+is the right quantity for article-level scoring and the wrong one for evidence
+recall. Evidence recall counts sentences, not documents, and twenty chunks of
+256 tokens are a quarter of the text of twenty chunks of 1024 — a quarter of the
+chances to contain anything. The reasoning was carried over from one metric to
+the other without being re-derived, which is the same mistake this document
+spent a whole section correcting when it published article-level Hit@K under the
+paper's name.
+
+**And part of it is a hard ceiling.** F2 measured that every evidence sentence
+survives 1024-token chunking whole — 981 of 981, a 100% ceiling. At 256 tokens:
+
+```
+32,877  chunks searched
+   981  distinct evidence sentences
+   895  present whole
+        ceiling on evidence recall: 91.2%
+```
+
+Eighty-six sentences now fall across a boundary and can never be found by
+containment. That accounts for about 4 points of the 14-point drop; the other 10
+are the volume argument above.
+
+### The same change moves the two metrics in opposite directions
+
+Before the next section claims hiding metadata is a win, here is the part that
+makes it a choice. The article-level numbers were re-measured on the committed
+configuration:
+
+| | metadata embedded | **metadata hidden** |
+|---|---:|---:|
+| chunk level, evidence recall@10 | 0.385 | **0.456** |
+| chunk level, MRR@10 | 0.389 | **0.466** |
+| article level, vector, MRR@10 | **0.759** | 0.731 |
+| article level, hybrid, MRR@10 | **0.782** | 0.747 |
+| article level, hybrid, Hit@1 | **0.631** | 0.592 |
+
+**It helps one metric by seven points and costs the other three.** Not a
+contradiction — the two measure different things, and the metadata is exactly
+the kind of text that separates them. `title`, `source` and `category` identify
+the *article* a passage came from, so embedding them pulls a chunk's vector
+toward its document, which is what article-level scoring rewards and what
+evidence recall does not care about at all. Hide them and each chunk is embedded
+for what it says.
+
+**Which is committed, and why.** Metadata hidden. `bench-wiki` exists to be
+compared against MultiHop-RAG, whose metric is chunk-level, and this
+configuration is the better one for that. The article-level numbers throughout
+this document are labelled with which setup produced them, and the cost is
+stated here rather than buried in a re-run.
+
+This is also the plainest evidence in this repository for something it has been
+asserting since phase 7: **which metric you pick is not a reporting detail.** A
+change that would have been written up as a clear improvement under one
+definition is a clear regression under another, from the same run.
+
+### Hiding metadata from the embedding is worth more than the chunk size
+
+The row that was supposed to be a control turned out to be the result. A → C
+changes one thing — four metadata fields stop being prepended to every chunk
+before it is embedded — and it buys **+0.077 MRR and +0.071 evidence recall**,
+larger than anything else measured on this pack that is not a reranker.
+
+```yaml
+# domains/bench-wiki/sources.yaml, corpus block
+hide_from_model: [title, source, category, published_at]
+```
+
+**The mechanism is measurable, and it is not the obvious one.** The obvious
+reading is dilution — every chunk carried `source: Sporting News`,
+`category: sports` and a timestamp, so a template shared across thousands of
+chunks was part of what got embedded. That may also be true, and it is not what
+the chunk counts say happened.
+
+The splitter is metadata-aware: it subtracts the metadata length from the chunk
+budget, so 269 tokens of metadata left 755 tokens for text. Hiding it gives all
+1,024 back. The corpus is the same text either way, so the chunk count moves:
+
+| | text tokens per chunk | chunks | evidence recall@10 |
+|---|---:|---:|---:|
+| 256, metadata hidden | ~256 | 32,877 | 0.318 |
+| 1024, metadata embedded | ~755 | 8,927 | 0.385 |
+| **1024, metadata hidden** | **~1,024** | **7,327** | **0.456** |
+
+**Evidence recall at fixed K tracks how much real text the K chunks contain**,
+monotonically, across all three runs. Twenty chunks retrieve 5,120 / 15,100 /
+20,480 tokens of article text respectively, and the recall order is the same.
+That single relationship explains both results in this phase — why the paper's
+smaller chunk size lost, and why hiding metadata won — and it is the quantity
+the original prediction should have been about instead of articles reached.
+
+It also means the win is not free in the way "hide the boilerplate" sounds: part
+of it is simply retrieving more text per result, which a larger `top_k` would
+also buy.
+
+**Two things worth saying about that one line.** It is the change that unblocked
+the paper's chunk size at all: the splitter charges the metadata string against
+the chunk budget, so 269 tokens of metadata against a 256-token chunk failed
+outright with `Metadata length (269) is longer than chunk size (256)`, which is
+where F2 stopped. And it is configuration — the fix for what looked like an
+engine limitation was one line of a pack, which is the thesis doing exactly what
+it claims.
+
+It was also not obvious. `hide_from_model` reads like a prompt-hygiene knob and
+was written as one, for oss's contaminated extraction prompts; it sets
+`excluded_embed_metadata_keys` as well, so it is the embedding knob too. On a
+pack with `extract: false` — no prompt at all — it is *only* the embedding knob,
+and nothing named it that.
+
+**Against the published table**, at last with matched chunk size:
+
+| | MRR@10 | evidence recall / Hits@10 |
+|---|---:|---:|
+| paper, ada-002, 256 tokens | 0.4203 | **0.6381** |
+| ours, nomic, 256 tokens, metadata hidden | 0.354 | 0.318 |
+| ours, nomic, 1024 tokens, metadata hidden | **0.466** | 0.456 |
+
+So the recall gap is **not** the chunk size, and after this run it has no
+measured explanation. The remaining candidate is the embedding model: F2's
+ada-002 run scored 0.407 evidence recall with metadata still embedded, against
+nomic's 0.385 in the same configuration. An ada-002 run with metadata hidden has
+not been made — it is the obvious next paid run, and it is not being made,
+because everything since has been local by choice.
 
 ### The reranker, measured
 
@@ -1124,11 +1282,14 @@ question.
   model and the paper's metric, **MRR@10 0.417 against its 0.4203**. Evidence
   recall still differs and the reason is measured rather than guessed — see
   [The comparison, actually run](#the-comparison-actually-run).
-- **The paper's chunk size, 256 tokens.** Blocked by this pack's metadata being
-  269 tokens on its own. Needs the metadata hidden from the embedding, which is
-  a further change and the next run. It is now the single largest open item:
-  both measurements that disagree with the paper — evidence recall with a
-  reranker and without — point at it.
+- ~~**The paper's chunk size, 256 tokens.**~~ Run, once the metadata was hidden
+  from the embedding. It made retrieval **worse** — evidence recall@10 0.318
+  against 1024's 0.456 — and refuted the diagnosis that predicted it. See
+  [the section](#the-papers-chunk-size-and-the-diagnosis-it-refutes).
+- **Why evidence recall is below the paper's, now that chunk size is ruled
+  out.** No measured explanation remains. The open candidate is the embedding
+  model: ada-002 scored 0.407 against nomic's 0.385 with metadata still
+  embedded, and an ada-002 run with metadata hidden has not been made.
 - ~~**Reranking.**~~ Run: MRR@10 0.389 → **0.660** with `bge-reranker-large`,
   against the +0.193 the paper reports for its own pair. See
   [The reranker, measured](#the-reranker-measured).

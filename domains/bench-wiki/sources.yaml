@@ -142,3 +142,19 @@ corpus:
       source: "{source}"
       category: "{category}"
       published_at: "{published_at}"
+
+    # Kept as graph/debug metadata, kept out of the embedding.
+    #
+    # This is what unblocked the paper's chunk size. The splitter charges the
+    # metadata string against the chunk budget, and these four render to 269
+    # tokens — so `chunk_size: 256` failed outright with "Metadata length (269)
+    # is longer than chunk size (256)" and the comparison could not be run.
+    #
+    # It is also the closer match to what the paper embedded, which was article
+    # text rather than text with a four-line header. That the fix turned out to
+    # be one line of a pack rather than a change to GraphPack is the thesis
+    # working, and it is worth saying that it was not obvious in advance —
+    # `hide_from_model` reads like a prompt-hygiene knob, and it was written as
+    # one for oss. It sets `excluded_embed_metadata_keys` as well, so it is also
+    # the embedding knob.
+    hide_from_model: [title, source, category, published_at]

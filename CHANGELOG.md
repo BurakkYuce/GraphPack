@@ -30,7 +30,16 @@ no public API.
   documents share an id template, because they are joined by string equality and
   a drift of one character produces an empty gold set rather than an error.
 
+- `Scores.precision_ceiling`, and `graphpack eval` prints it when it binds. A
+  gold set narrower than what extraction can claim caps precision below 100%,
+  and the bare number then reads as an error rate: oss's new task is capped at
+  61.9%, so its measured 52.8% has nine points of headroom rather than forty.
+
 ### Fixed
+- `graphpack inspect PACK` scoped nothing but the ontology it compared against.
+  With two packs ingested it reported 28% conformance (464/1,639) while
+  `validate-triples` reported 100% on the same graph — 464 was one pack's,
+  1,639 was every pack's. The pack-tag census stays global on purpose.
 - **Regression:** the corpus template check introduced in `b61b736` captured the
   early `return` of `_check_sources` into its loop, so every pack declaring a
   corpus silently skipped the rest of validation for a day. All fifteen tests

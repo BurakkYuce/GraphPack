@@ -199,6 +199,124 @@ thread in a repository that publishes several is scored against whichever one
 the derive step kept. It is a limit of deriving this from published metadata
 alone, and it is stated rather than corrected.
 
+## A third of the graph was the prompt we wrote
+
+```bash
+# domains/oss/sources.yaml — corpus block
+#   hide_from_model: [url, state, created_at]
+uv run graphpack pack reset oss --extraction-only --yes
+uv run graphpack ingest oss --sample 200 --seed 0
+uv run graphpack resolve oss && uv run graphpack eval oss
+```
+
+LlamaIndex prepends every metadata key to a chunk as `key: value` before a model
+sees it, so a field kept for bookkeeping is a field extraction reads as document
+content. This was known — it is how an entity called `pack: oss` appeared — and
+the mechanism to prevent it (`hide_from_model`) existed and was deliberately not
+used, so the committed configuration matched the run that produced the published
+numbers. Re-running costs four minutes on a hosted model. That reason expired.
+
+**Measured before the change, on the schema path with constraints enforced:**
+
+```
+  490  extracted entities
+  154  named by a URL      31.4%   typed ISSUE, PACKAGE, REPOSITORY
+    0  named by a date      0.0%
+    0  named open/closed    0.0%
+```
+
+Nearly a third of the graph was the `url:` line, and `validate-triples` reported
+**100% conforming** throughout — because those entities were typed `ISSUE`,
+`PACKAGE` and `REPOSITORY`, all of which the ontology declares. Conformance
+checking cannot see this class of error at all.
+
+Two corrections to what this document previously predicted. It said the
+contamination showed up as `URL` and `DATE` entity types; that was true of the
+local run on the dynamic extractor, and on the schema path there is no such
+label because non-conforming types are discarded before they are written. And
+`state` and `created_at` produced nothing measurable either way — only `url`
+did. They are hidden anyway, since text that reaches the model without being
+content costs tokens and buys nothing.
+
+### What hiding it did
+
+| | url visible | url hidden |
+|---|---:|---:|
+| chunks | 604 | 518 |
+| extracted entities | 490 | 419 |
+| **named by a URL** | **154 (31.4%)** | **3 (0.7%)** |
+| REPOSITORY | 20 | **77** |
+| HOSTED_IN | 10 | **85** |
+| REPORTED_IN | 15 | **52** |
+| AUTHORED | 0 | 4 |
+| conformance | 100% | 100% |
+| `dependencies` F1 | 14.6% | **21.1%** |
+| `thread_package` recall | 85.2% | 86.2% |
+
+The graph got smaller and better. Removing the URL line did not just delete
+noise, it freed the extractor to find structure it had been spending its budget
+missing — repository and authorship edges roughly quintupled, and the dependency
+task's F1 went from 14.6% to 21.1%.
+
+Chunks fell 14% as well, because metadata counts against the chunk-size budget.
+Fewer chunks is fewer model calls, so this is cheaper as well as cleaner.
+
+The three surviving URL-named entities come from links in the issue bodies,
+which is genuine document content.
+
+### The new task leaks, and here is how much
+
+`thread_package` gold is derived from the repository slug, and the model is
+shown `repo: <slug>`. So its 86% recall might be the model repeating metadata
+back rather than reading the thread. That is worth knowing rather than assuming,
+and settling it cost one more four-minute run:
+
+| hidden from the model | `thread_package` recall | `dependencies` F1 |
+|---|---:|---:|
+| `url, state, created_at` | **86.2%** [77.8–91.7] | 21.1% |
+| `url, state, created_at, repo` | **74.8%** [65.8–82.0] | 12.5% |
+
+**About ten points of that recall is the slug; about seventy-five survives
+without it.** So the task is not metadata echo, and it is not clean either — and
+the size of the effect is now a number rather than a worry.
+
+`repo` stays visible in the committed configuration, and the reason is not that
+it scores better. A GitHub issue is inseparable from its repository: a reader
+sees it in the URL bar and in every cross-reference, so it is document content
+in the way that `created_at` is not. Hiding content to improve a score would be
+fitting the corpus to the evaluation. The leak is handled by measuring it and
+writing it here.
+
+### Run-to-run variance, measured for the first time
+
+The configuration above was run twice, identically. This has never been checked
+in this project and it changes how one of the two tasks should be read:
+
+| | run A | run B |
+|---|---:|---:|
+| extracted entities | 422 | 419 |
+| documents with resolved entities | 94 | 94 |
+| `thread_package` gold | **94** | **94** |
+| `thread_package` recall | 85.1% | 86.2% |
+| `dependencies` gold | **66** | **37** |
+| `dependencies` F1 | 22.0% | 21.1% |
+
+**`thread_package` is stable and `dependencies` is not.** The document-shaped
+gold set was identical across runs — it depends only on which documents resolved
+anything at all. The pair-shaped gold set nearly halved, because it depends on
+which *specific pairs* extraction happened to find in the same document, and
+that varies with the model's sampling.
+
+This matters for how the intervals are read. A Wilson interval assumes a fixed
+gold set and reports the sampling error in the score; when the gold set itself
+moves by 44% between runs, the stated ±13 points on `dependencies` understates
+the real uncertainty. Its F1 landing at 22.0% and 21.1% across those two runs is
+partly luck.
+
+So the case for the document-shaped generator is stronger than the interval
+width alone suggested: it is not merely a narrower measurement, it is a
+*reproducible* one.
+
 ## The ontology does not constrain extraction. At all.
 
 ```bash
@@ -499,11 +617,10 @@ indexed, which is why it is the measurement above.
   it worked: 24 gold edges to 135, ±13 points to ±6. What it does *not* do is
   make `dependencies` measurable; that task still has 24 edges and still
   supports no conclusion, and the new task answers an easier question.
-- **oss's prompt contamination.** `url`, `state` and `created_at` still reach
-  the model as document text — the mechanism to hide them exists
-  (`hide_from_model`) and was deliberately not applied, so the committed
-  configuration matched the run that produced the numbers. Re-measuring now
-  costs five minutes rather than ten hours.
+- ~~**oss's prompt contamination.**~~ Measured and fixed — see [A third of the
+  graph was the prompt we wrote](#a-third-of-the-graph-was-the-prompt-we-wrote).
+  It was 31.4% of the entities, invisible to conformance checking, and removing
+  it improved the dependency task rather than merely shrinking the graph.
 - **tr-law's ablation, unconfounded.** Its graph holds 1,578 decisions and 200
   are ingested, so the 5.9% is mostly sampling. Ingesting the full corpus would
   make it a second clean data point beside bench-wiki's 26.8%.

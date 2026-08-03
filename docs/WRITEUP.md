@@ -209,9 +209,15 @@ Every one of these produced a plausible number before it produced an error.
 - **Neo4j's label order chose entity types.** `__Entity__` nodes MERGE globally
   on id, so one node accumulates every type the model ever gave it. Resolution
   took `labels(e)[0]`.
-- **Our own bookkeeping was extracted.** LlamaIndex prepends metadata to a
-  node's text before sending it to the model, so `pack: oss` became a `PACKAGE`
-  entity from a thread about botocore.
+- **Our own bookkeeping was extracted, and it was a third of the graph.**
+  LlamaIndex prepends metadata to a node's text before sending it to the model,
+  so `pack: oss` became a `PACKAGE` entity from a thread about botocore. Once
+  that was known, the scale of it was still not: **31.4% of oss's extracted
+  entities were named by a URL** — the `url:` line we had added — and every one
+  was typed `ISSUE`, `PACKAGE` or `REPOSITORY`, so `validate-triples` reported
+  100% conforming the whole time. Hiding the field took it to 0.7%, and the
+  structure that had been crowded out came through: repository edges went from
+  10 to 85 and the dependency task's F1 from 14.6% to 21.1%.
 - **The extractor validated against somebody else's ontology.** The engine
   passes no `kg_validation_schema`, so LlamaIndex used its PRODUCT / MARKET
   example and `strict=True` discarded every triple a real pack produced. Turkish
@@ -240,10 +246,18 @@ allow.
   is reported and no conclusion is drawn from it. What changed is that the pack
   now also carries a task that *can* be measured — 135 edges, ±6 — so the domain
   is no longer unmeasurable even though the harder question about it is.
-- **And that measurable task asks an easier question.** "Is the thread's own
-  package named in the thread" is easier than "did the model find a dependency
-  relation", and its precision is capped at 61.9% by how the gold is built. Both
-  are stated next to the number rather than under it; see RESULTS.md.
+- **And that measurable task asks an easier question, and leaks a little.** "Is
+  the thread's own package named in the thread" is easier than "did the model
+  find a dependency relation", and its precision is capped by how the gold is
+  built. Its gold also comes from the repository slug, which the model can see
+  as `repo:` — hiding that costs about ten points of recall, so roughly seventy
+  five of its eighty six comes from reading the thread and the rest from
+  repeating the metadata. Measured rather than argued; see RESULTS.md.
+- **Scores move between identical runs, and one task moves much more.** The same
+  configuration run twice gave the same `thread_package` gold set both times
+  (94 edges) and a `dependencies` gold set that nearly halved (66, then 37). A
+  Wilson interval assumes a fixed gold set, so the stated ±13 on that task
+  understates its real uncertainty.
 - **Article-level citations score nothing.** The extracted mention is `"371.
   maddesinde"` and the backbone identifier is `madde:6100/371`: an article
   number alone identifies nothing, and the statute was in the sentence

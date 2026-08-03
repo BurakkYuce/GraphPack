@@ -201,7 +201,11 @@ def document_edges(session, pack: str, task) -> tuple[set, set, dict]:
         gold,
         {
             "documents_ingested": len(ingested),
-            "documents_with_backbone_edges": sum(1 for d in backbone if d in ingested),
+            # Named to match `backbone_edges`, because the report is generic
+            # over generators and prints these by key. A generator inventing its
+            # own names crashes the command it feeds after the score is already
+            # computed — which is exactly what happened.
+            "documents_carrying_gold": sum(1 for d in backbone if d in ingested),
             "backbone_edges": sum(len(t) for t in backbone.values()),
             "documents_with_resolved_entities": len(ingested),
             "resolvable_entities": sum(len(e) for e in mentions.values()),

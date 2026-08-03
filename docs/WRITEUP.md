@@ -72,10 +72,16 @@ retrieval only — the engine's BM25 leg does not survive a process boundary —
 no comparison to the published table is claimed, because matching its embedding
 model and reranking is a separate run.
 
-**The extraction evaluation is not well measured.** oss: F1 22.2%, over *twenty*
-gold edges, interval ±13 points. That number does not support a conclusion about
-the system and is not offered as one. What it does support is a conclusion about
-the evaluation design, which is the next section.
+**Extraction is measured in two domains now, and they disagree by a lot.**
+tr-law: F1 **81.4%**, precision 97.2%, over 150 gold edges, interval ±5. oss:
+F1 22.2% over *twenty* gold edges, interval ±13 — a number that supports no
+conclusion about the system and is not offered as one.
+
+The gap is not the model being better at Turkish. It is three things that were
+wrong in the oss run and right in the tr-law one: the backbone covered the
+corpus instead of a tenth of it, the ontology was enforced during extraction
+instead of ignored, and the extractor was one the provider can actually drive.
+Each is in [RESULTS.md](RESULTS.md) with the measurement that showed it.
 
 Having both in one repository is what makes either legible. Same metrics code,
 same interval arithmetic, 2,255 measurements against 20: ±2 points against ±13.
@@ -104,11 +110,16 @@ in the stack that ever compares extraction to the schema it was given. Without
 it, a graph 82% of whose relations violate its own ontology looks exactly like
 one that does not.
 
-**Extraction is essentially the whole cost.** Two ingests on the same machine:
-200 documents *with* extraction, 10 h 37 m. 609 documents and 8,927 chunks
-*without*, 6 m 6 s. Three times the documents, fifteen times the chunks, one
-hundredth of the time. Chunking and embedding are free by comparison; the model
-reading every chunk is the bill.
+**Extraction is essentially the whole cost — locally.** Two ingests on the same
+machine: 200 documents *with* extraction, 10 h 37 m. 609 documents and 8,927
+chunks *without*, 6 m 6 s. Chunking and embedding are free by comparison; the
+model reading every chunk is the bill.
+
+Moving that model off the laptop changes the shape entirely. The same 200
+documents through a hosted model took **10 m 19 s** and cost about sixty cents.
+The local run is not a cheaper version of the hosted one — it is a different
+regime, and every timing in this project that predates it is a fact about a
+laptop.
 
 ## The defects are the interesting part
 
@@ -128,6 +139,11 @@ Every one of these produced a plausible number before it produced an error.
 - **Our own bookkeeping was extracted.** LlamaIndex prepends metadata to a
   node's text before sending it to the model, so `pack: oss` became a `PACKAGE`
   entity from a thread about botocore.
+- **The extractor validated against somebody else's ontology.** The engine
+  passes no `kg_validation_schema`, so LlamaIndex used its PRODUCT / MARKET
+  example and `strict=True` discarded every triple a real pack produced. Turkish
+  case law was being filtered against a schema about consumer products, and the
+  ingest reported success.
 - **`text: body`.** A template with no placeholder renders itself: 609 documents
   of four characters, which an ingest embeds without complaint.
 - **`[must be empty]` on the second comment line.** The marker is read on the
@@ -146,11 +162,17 @@ the undifferentiated version sent somebody to the wrong place.
 Stated plainly, because the numbers above are only worth what the caveats
 allow.
 
-- **The thesis says two domains measured with P/R/F1. There is one.** tr-law's
-  corpus extraction had not been run when this was written; every tr-law figure
-  so far is its backbone and its traversals. Until that lands, the
-  cross-domain extraction claim is a design argument, not a measurement.
-- **The one extraction measurement is weak.** ±13 points on twenty edges.
+- **The two domains are not a controlled comparison.** oss ran on a local model
+  with the dynamic extractor; tr-law on a hosted one with the schema extractor.
+  Domain, language, model and extractor all differ at once, so the two F1
+  figures cannot be attributed to any one of them. Re-running oss on tr-law's
+  setup would settle it and costs about a dollar.
+- **The oss measurement is weak on its own terms.** ±13 points on twenty edges.
+- **Article-level citations score nothing.** The extracted mention is `"371.
+  maddesinde"` and the backbone identifier is `madde:6100/371`: an article
+  number alone identifies nothing, and the statute was in the sentence
+  extraction discarded. Resolving it needs context-dependent resolution, which
+  does not exist yet.
 - **The benchmark is vector-only**, and unreranked.
 - **No ablation.** Nothing here measures what the *graph* adds over retrieval
   alone. The agent's traversals answer questions a retriever cannot — "which

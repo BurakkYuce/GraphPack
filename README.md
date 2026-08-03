@@ -31,9 +31,11 @@ contract could say so — so the contract grew a knob. That is the shape the
 thesis predicts a new vertical should have: configuration for the domain, and
 occasionally one general capability the domain was the first to need.
 
-**Status:** all phases run. Three packs live. MultiHop-RAG scores MRR@10 0.759
-over 2,255 queries; the oss extraction evaluation scores F1 22.2% over twenty
-gold edges and is reported as the weak measurement it is.
+**Status:** all phases run, both extraction domains measured. tr-law scores
+F1 81.4% (P 97.2%, R 70.0%) over 150 gold edges with 100% of relations
+conforming to its ontology; MultiHop-RAG scores MRR@10 0.759 over 2,255
+queries; the oss extraction evaluation scores F1 22.2% over twenty gold edges
+and is reported as the weak measurement it is.
 
 - [docs/WRITEUP.md](docs/WRITEUP.md) — what the project claims, what it showed,
   and where it is weak

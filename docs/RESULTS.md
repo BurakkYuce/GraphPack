@@ -169,6 +169,78 @@ always built, and only `fuzzy` needs the names. `REPOSITORY` and `RELEASE` do
 not ask for fuzzy, so having no names is correct. The log line now says which
 kind of matching a rule does instead of reporting an absence.
 
+## The tr-law corpus — the thesis's second domain
+
+```bash
+uv run graphpack ingest tr-law --sample 200 --seed 0   # 10 m 19 s, gemini-3.5-flash-lite
+uv run graphpack resolve tr-law
+uv run graphpack eval tr-law
+```
+
+```
+statute_citations (document_edges: CITES)
+  P 97.2% [92.1–99.1]   R 70.0% [62.2–76.8]   F1 81.4%
+  tp 105, fp 3, fn 45 — 150 gold edges, 88 of 88 documents carried gold
+```
+
+**150 gold edges against oss's 20**, and intervals of ±5 rather than ±13. Two
+things produce that, and only one of them is the model.
+
+The first is the pack's shape. tr-law's backbone is built from the citations in
+the decisions themselves, so every statute a decision cites is in the backbone
+by construction — there is no coverage gap of the kind that cost oss three
+quarters of its signal. Every one of the 88 documents with a resolved entity
+carried gold; for oss it was 17 of 147.
+
+The second is the extractor. See below.
+
+### Precision 97.2% is the schema constraint, not the model
+
+Three false positives out of 108 claims. That is what enforcing
+`rdfs:domain`/`rdfs:range` during extraction buys: a triple whose types the
+ontology does not pair is discarded before it is ever written.
+
+The cost is on the other side. 45 of 150 gold edges were missed, and every one
+of the ten sampled misses is the same shape — *"both ends resolved, nothing
+between them"*. The model named the decision and named the statute and did not
+say the decision cites it. Recall is where a strict schema is paid for.
+
+### What changed, and what it cost
+
+| | oss (ollama, dynamic) | tr-law (gemini, schema) |
+|---|---|---|
+| documents | 200 | 200 |
+| chunks | 611 | 532 |
+| wall clock | 10 h 37 m | **10 m 19 s** |
+| relations conforming to the ontology | 17.8% | **100%** |
+| entity labels the ontology declares | 42% | **100%** |
+| gold edges | 20 | 150 |
+| F1 | 22.2% [±13] | **81.4%** [±5] |
+
+The two runs are not a controlled comparison and should not be read as one:
+different domain, different language, different extractor, different model.
+What they do establish is that the earlier numbers were bounded by the setup
+rather than by the idea — and which parts of the setup.
+
+Extraction cost about **$0.60** at `gemini-3.5-flash-lite` rates.
+
+### Article citations score nothing, for a structural reason
+
+The second task, `article_citations`, has no gold at all: 96 of 97 extracted
+`ARTICLE` mentions fail to resolve. This is not a threshold to tune.
+
+Backbone article identifiers carry their statute — `madde:6100/371` — because an
+article number alone identifies nothing; article 371 of *which* law. The
+extracted mentions are `"371. maddesinde"`, `"16/son"`, `"4. madde birinci
+fıkrası"`. The statute is in the sentence around them, and extraction kept the
+article and discarded the sentence.
+
+Resolving these needs context-dependent resolution: reading a mention against
+the entity it was extracted alongside, rather than on its own. The ontology
+already declares `STATUTE HAS_ARTICLE ARTICLE`, so the information is
+expressible; nothing in the resolver reads it yet. That is the honest state —
+the number is absent rather than bad.
+
 ## The MultiHop-RAG benchmark, phase 7
 
 ```bash
@@ -234,9 +306,11 @@ beside `extract: false` when deciding whether a pack needs it.
 
 ## What has not been measured
 
-- **tr-law extraction.** Its corpus has never been ingested — 0 `__Entity__`
-  nodes — so the cross-pack comparison of resolution methods is not available.
-  Everything reported for tr-law so far is its backbone and its traversals.
+- **Article-level citations.** No gold survives resolution; see above.
+- **A controlled comparison of extractors.** oss ran on ollama with the dynamic
+  extractor, tr-law on gemini with the schema extractor. Everything differs at
+  once, so the two F1 figures cannot be attributed. Re-running oss on the same
+  setup as tr-law would settle it and costs about a dollar.
 - **Hybrid retrieval.** Every benchmark number above is the vector leg alone.
 - **The published MultiHop-RAG table.** See above: matching its setup is a
   separate run, not a paragraph.

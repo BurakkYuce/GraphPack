@@ -202,3 +202,18 @@ def test_no_gold_is_reported_rather_than_scored_as_failure(graph, rules, tmp_pat
     report = run_eval(graph, PACK, rules)
 
     assert report.results[0].scores.gold == 0
+
+
+def test_every_generator_reports_the_diagnostics_the_report_prints():
+    """The eval report is generic over generators and looks these up by key. A
+    generator inventing its own names raised KeyError *after* the score had been
+    computed — the number was right there and the command died printing it."""
+    import inspect
+
+    from graphpack.eval import generators as gen
+
+    required = {"documents_carrying_gold", "documents_with_resolved_entities", "backbone_edges"}
+    for name in gen.GENERATORS:
+        source = inspect.getsource(getattr(gen, name))
+        missing = {key for key in required if f'"{key}"' not in source}
+        assert not missing, f"{name} does not report {sorted(missing)}"

@@ -81,19 +81,31 @@ cevaplanmıyor, birkaçını birleştirmek gerekiyor.
 
 Bunlar 2.255 soru üzerinde ölçüldü, yani sağlam sayılar.
 
-**Zorlanan: belgeyi yapay zekâya okutup pano kurdurmak.** İki sorun:
+**Zorlanan: belgeyi yapay zekâya okutup pano kurdurmak.**
 
-*Pahalı.* Bir dizüstü bilgisayarda 200 belgeyi okumak **10,5 saat** sürdü.
-Karşılaştırma için: 609 makaleyi okutmadan, sadece aranabilir hale getirmek
-**6 dakika**. Yani maliyetin neredeyse tamamı yapay zekânın metni okuması.
+*Pahalı — ama nerede koşturduğuna bağlı.* Bir dizüstü bilgisayarda 200 belgeyi
+okutmak **10,5 saat** sürdü. Aynı 200 belge, bulut üzerindeki bir modelde
+**4 dakika** ve yaklaşık 60 sent. Yani "yavaş" dediğimiz şey tasarımın değil,
+dizüstü bilgisayarın özelliğiymiş. Kıyas için: okutmadan, sadece aranabilir hale
+getirmek 609 makale için 6 dakika.
 
-*Söz dinlemiyor.* Modele "sadece şu tür şeyleri, şu kurallara göre çıkar"
-diyoruz. Çıkardıklarının **sadece %18'i** verdiğimiz kurallara uyuyor. Model
-kendi kafasına göre yeni türler icat ediyor.
+*Söz dinlemiyordu, dinletildi.* Modele "sadece şu tür şeyleri, şu kurallara göre
+çıkar" diyoruz. Dizüstündeki modelde çıkardıklarının **sadece %18'i** kurallara
+uyuyordu; model kendi kafasına göre tür icat ediyordu.
 
 Buradaki asıl bulgu şu: **kimse bunu kontrol etmiyordu.** Asıl sistem kuralları
-alıyor ama uygulamıyor. Biz kontrol katmanını ekledik, ve o katman olmadan
-kurallarının %82'sini çiğneyen bir pano, düzgün bir panodan ayırt edilemiyor.
+alıyor ama uygulamıyor — üstelik altındaki kütüphane, kendi örnek kurallarına
+göre denetleyip her şeyi çöpe atıyor ve "başarıyla tamamlandı" diyordu. Biz hem
+kuralları gerçekten uygulattık hem de sonucu denetleyen katmanı ekledik.
+Uyum **%18'den %100'e** çıktı. O katman olmadan, kurallarının %82'sini çiğneyen
+bir pano düzgün bir panodan ayırt edilemiyor.
+
+*Ve panonun üçte biri bizim kendi notumuzmuş.* Belgeye iliştirdiğimiz künye
+bilgileri — bağlantı adresi, tarih, durum — modele belge metniymiş gibi
+gidiyormuş. Çıkarılan varlıkların **%31'i** aslında bizim eklediğimiz bağlantı
+adresiydi, ve hepsi "geçerli tür" taşıdığı için uyum denetimi bunu göremiyordu.
+Künyeyi gizleyince oran %0,7'ye düştü — ve pano küçülmedi, **iyileşti**: gerçek
+yapı için yer açıldı, depo bağlantıları 10'dan 85'e çıktı.
 
 ## Cevap anahtarı sorunu ve çözümü
 
@@ -114,21 +126,42 @@ karşılaştırıyoruz. **Kimse tek bir etiket yazmadı.**
 
 Bu kısım bilerek burada, "gelecek çalışmalar"a süpürülmedi.
 
-**Ölçümün yarısı eksik.** İddiamız "iki farklı alanda ölçtüm" ama şu an elimizde
-bir alan var, o da zayıf ölçülmüş. Türk hukuku tarafının yapay zekâ okuması hiç
-koşmadı — 16 saatlik bir iş ve şimdilik durduruldu.
+**Üç kez teşhis koyduk, ikisi yanlış çıktı.** Yazılım paketleri tarafı uzun süre
+ölçülemedi: not verilebilecek yalnızca 20-24 örnek çıkıyordu, ki 20 örnekle
+"başarı %22" demek 20 kişiye sorup seçim tahmini yapmak gibidir.
 
-**Elimizdeki ölçüm zayıf.** Yazılım paketleri tarafında not verilebilecek sadece
-20 örnek çıktı. 20 örnekle "başarı %22" demek, 20 kişiye sorup seçim tahmini
-yapmak gibi. Sayı var ama bir şey söylemiyor. Neden az çıktığını bulduk: pano
-en popüler 1.000 paketi tanıyor, belgeler ise çok daha geniş bir dünyadan
-konuşuyor. Çözümü de belli — panoyu genişletmek, ki bedava.
+Önce "model ve kurallar yüzünden" dedik — kontrollü bir koşum yanlış çıkardı.
+Sonra "pano çok dar" dedik — panoyu 8 katına çıkardık, 2 örnek kazandık.
+Üçüncüsü tuttu: sorun **sorduğumuz sorunun şekliydi.** Belgelerin %69'u tek
+paketten bahsediyor, bizim ölçüm yöntemimiz ise aynı belgede *iki* ilişkili
+paket arıyordu. Başlıkları da panoya birer düğüm olarak ekleyince — kod değil,
+ayar — örnek sayısı **24'ten 135'e** çıktı ve belirsizlik payı ±13 puandan
+±6'ya indi.
 
-**Kanıtlanmayan bir şey.** "Pano kurmak düz aramadan daha iyi" diyoruz ama bunu
-ölçmedik. Ölçmek zor değil, sadece yapılmadı. En büyük eksik bu.
+Bunun dersi "ilk iki tahmin kötüydü" değil. Bir teşhisi **yazmak**, onu
+birinin koşabileceği bir iddiaya çevirir; koşmak bir dolar ve yirmi dakika,
+yanlış inançla devam etmek ise ondan sonraki her kararı şekillendirirdi.
 
-**Tek makine, tek model.** Bütün süre ölçümleri bir dizüstü bilgisayara ait.
-Başka donanımda başka çıkar.
+**Yeni ölçüm daha kolay bir soru soruyor, ve bunu da yazıyoruz.** "Bu başlığın
+kendi paketi metinde anılıyor mu" sorusu, "bağımlılık ilişkisi bulundu mu"
+sorusundan kolay. Üstelik cevabın bir kısmı künyede yazılı: künyeyi de
+gizleyince başarı %86'dan %75'e düşüyor — yani ~10 puanı künyeyi tekrarlamak,
+~75 puanı gerçekten metni okumak. Bu sayıyı tahmin etmedik, ölçtük.
+
+**Aynı ayarla iki kez koşunca sonuç değişiyor.** Bunu daha önce hiç kontrol
+etmemiştik. Yeni ölçüm iki koşumda da aynı 94 örneği üretti; eski ölçüm 66 ve 37
+üretti — neredeyse yarı yarıya. Yani eski ölçümün belirsizliği, yazdığımız
+belirsizlik payından bile fazla.
+
+**Halka açık sınavdaki sayımız, makalenin sayısından yüksek görünüyor ama
+karşılaştırılabilir değil.** Makale 0,586 diyor, biz 0,759. Sebep bizim daha iyi
+olmamız değil: makale *parça* düzeyinde puanlıyor, biz *makale* düzeyinde; ve
+makalenin "isabet" tanımı kanıtların ne kadarını bulduğun, bizimki en az birini
+bulup bulmadığın. İkisi de bizim lehimize kolaylık. Bunu makaleyi okuyunca fark
+ettik ve kendi kodumuzdaki ters iddiayı düzelttik.
+
+**Tek makine, tek yerel model.** Dizüstündeki bütün süre ölçümleri o makineye
+ait. Bulut modeliyle koşanlar tamamen başka bir rejimde.
 
 ## Bu işten geriye ne kalıyor
 
@@ -144,6 +177,10 @@ Paketlerin kendisi değil, yöntemler:
 4. **Her sayının yanına belirsizlik payı** — küçük örneklem, kendinden emin
    görünen sayı üretir. "%22" değil "%22, artı eksi 13" yazmak, o sayıyı sonuç
    diye sunmamızı engelledi.
+5. **Neyi ölçtüğünü sormak, iyileştirmeye çalışmadan önce** — bu projenin en
+   pahalı dersi. "Sistem kötü" diye okunabilecek bir sayı, aslında yanlış soru
+   sorulduğu için düşüktü. Model değişmedi, veri değişmedi, tek bir belge bile
+   yeniden okutulmadı; soru değişti ve ölçülebilir örnek sayısı beşe katlandı.
 
 ---
 
@@ -157,8 +194,14 @@ Paketlerin kendisi değil, yöntemler:
 > kontrol ediyoruz.
 >
 > Doğru belgeyi bulma tarafı iyi çalışıyor: halka açık bir sınavda ilk denemede
-> %63, ilk onda %98. Yapay zekâya okutup pano kurdurma tarafı zorlanıyor —
-> dizüstünde 200 belge 10 saat sürüyor ve model verdiğimiz kuralların ancak
-> %18'ine uyuyor.
+> %63, ilk onda %98. Yapay zekâya okutup pano kurdurma tarafı zor: model
+> verdiğimiz kuralların ancak %18'ine uyuyordu.
 >
-> En kıymetli bulgu da o: kimse bu uyumu ölçmüyordu. Ölçen katmanı biz koyduk.
+> En kıymetli iki bulgu da orada. Birincisi: kimse bu uyumu ölçmüyordu — asıl
+> sistem kuralları alıp uygulamıyordu bile. Ölçen ve uygulatan katmanı biz
+> koyduk, uyum %18'den %100'e çıktı.
+>
+> İkincisi daha genel: bir ölçüm düşük çıktığında önce "sistem kötü" demeyip
+> "acaba yanlış soru mu soruyorum" diye sormak. Bizde cevabı evetti — soruyu
+> değiştirince, tek bir belgeyi yeniden okutmadan, ölçülebilir örnek sayısı
+> beşe katlandı.

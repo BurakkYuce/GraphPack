@@ -407,14 +407,20 @@ statute_citations (document_edges: CITES)
   tp 105, fp 3, fn 45 — 150 gold edges, 88 of 88 documents carried gold
 ```
 
-**150 gold edges against oss's 20**, and intervals of ±5 rather than ±13. Two
-things produce that, and only one of them is the model.
+**150 gold edges against oss's 20 at the time**, and intervals of ±5 rather than
+±13. Two things produce that, and only one of them is the model.
 
-The first is the pack's shape. tr-law's backbone is built from the citations in
-the decisions themselves, so every statute a decision cites is in the backbone
-by construction — there is no coverage gap of the kind that cost oss three
-quarters of its signal. Every one of the 88 documents with a resolved entity
-carried gold; for oss it was 17 of 147.
+The first is the pack's shape — and specifically that its documents are nodes.
+tr-law's backbone is built from the citations in the decisions themselves, so
+every statute a decision cites is in the backbone by construction. Every one of
+the 88 documents with a resolved entity carried gold; for oss it was 17 of 147.
+
+That difference is the one this document later stopped attributing to the
+domain: giving oss's threads document nodes and scoring them the same way took
+it from 17-of-147 to 135-of-139 without touching the model, the corpus or the
+extraction run. What looked like two domains of unequal difficulty was, in that
+respect, two *generators* of unequal reach. The remaining gap between 81.4% and
+oss's tasks is real, and smaller than it was.
 
 The second is the extractor. See below.
 
@@ -511,8 +517,10 @@ uv run graphpack bench bench-wiki            # all 2,556 queries
 2,255 answerable queries; 301 with no answer in the corpus.
 
 The contrast with the oss evaluation is the point of having both. Same
-machinery, same intervals, 2,255 measurements instead of 20: ±2 points instead
-of ±13. Nothing about the system got more certain — the measurement did.
+machinery, same intervals, 2,255 measurements instead of 24: ±2 points instead
+of ±13. Nothing about the system got more certain — the measurement did. And
+the same lesson applied to oss later, at a smaller scale: 135 measurements
+instead of 24 narrowed it to ±6, again without changing the system.
 
 ### What this is a number for, exactly
 

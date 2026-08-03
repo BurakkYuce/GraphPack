@@ -151,3 +151,55 @@ def test_a_pack_whose_graph_is_metadata_can_skip_extraction(pack_dir):
     assert settings.enable_knowledge_graph is False
     # Still indexed for search: skipping extraction is not skipping the corpus.
     assert str(settings.vector_db) == "qdrant"
+
+
+def test_the_extractor_is_given_the_pack_s_own_triple_constraints(pack_dir):
+    """Without this the extractor validates against LlamaIndex's
+    DEFAULT_VALIDATION_SCHEMA — a PRODUCT / MARKET / TECHNOLOGY example — and
+    `strict=True` discards every triple a real pack produces. Turkish case law
+    was being filtered against a schema about consumer products, and the run
+    reported success while writing nothing."""
+    from graphpack.packs.loader import enforce_triple_constraints
+    from graphpack.packs.ontology import compile_ontology
+
+    root = pack_dir("widgets")
+    schema = compile_ontology(root / "ontology.ttl")
+
+    class FakeExtractor:
+        kg_validation_schema = {"relationships": [("PRODUCT", "USED_BY", "PRODUCT")]}
+
+    class FakeManager:
+        def create_extractor(self, *args, **kwargs):
+            return FakeExtractor()
+
+    class FakeSystem:
+        schema_manager = FakeManager()
+
+    system = FakeSystem()
+    enforce_triple_constraints(system, schema)
+
+    extractor = system.schema_manager.create_extractor()
+    assert extractor.kg_validation_schema == {"relationships": [("WIDGET", "BUILT_IN", "FACTORY")]}
+
+
+def test_an_extractor_without_a_validation_schema_is_left_alone(pack_dir):
+    """The dynamic extractor has no such field and wants none."""
+    from graphpack.packs.loader import enforce_triple_constraints
+    from graphpack.packs.ontology import compile_ontology
+
+    schema = compile_ontology(pack_dir("widgets") / "ontology.ttl")
+
+    class Dynamic:
+        pass
+
+    class FakeManager:
+        def create_extractor(self, *a, **k):
+            return Dynamic()
+
+    class FakeSystem:
+        schema_manager = FakeManager()
+
+    system = FakeSystem()
+    enforce_triple_constraints(system, schema)
+
+    assert not hasattr(system.schema_manager.create_extractor(), "kg_validation_schema")

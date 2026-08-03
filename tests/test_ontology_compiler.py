@@ -34,8 +34,10 @@ def test_triple_constraints_are_derived_but_kept_out_of_the_engine_schema(pack_d
     schema = compile_ontology(root / "ontology.ttl")
 
     assert schema.triple_constraints == [("WIDGET", "BUILT_IN", "FACTORY")]
-    # The engine never forwards triple constraints to SchemaLLMPathExtractor, so
-    # shipping them in this dict would imply an enforcement that does not happen.
+    # Kept out of the engine schema because `SchemaManager.create_extractor`
+    # reads no such key — putting it there would look like configuration and do
+    # nothing. The constraints are installed on the extractor directly, after
+    # construction: see `loader.enforce_triple_constraints`, and the test below.
     assert "validation_schema" not in schema.as_engine_schema()
 
 

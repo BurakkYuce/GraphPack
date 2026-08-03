@@ -55,12 +55,15 @@ cannot represent two packs. GraphPack compiles the ontology into a named
 `schemas` entry instead, which lives on one `Settings` instance.
 → `tests/test_loader.py::test_ontology_singleton_path_stays_off`
 
-**Triple constraints never reach the extractor.** `SchemaManager` passes
-`possible_entities`, `possible_relations` and the property lists to
-`SchemaLLMPathExtractor` — never `validation_schema`. The only consumer is the
-Ladybug adapter. So `rdfs:domain`/`rdfs:range` in a pack ontology do *not*
-constrain extraction; GraphPack derives the constraints and enforces them itself
-in the resolution pass.
+**Triple constraints are not in the schema the engine is given.**
+`SchemaManager` passes `possible_entities`, `possible_relations` and the
+property lists to `SchemaLLMPathExtractor` and never `validation_schema`, so a
+pack's `rdfs:domain`/`rdfs:range` are absent from what the engine builds.
+
+What that *means* depends on the extractor, and the two answers are opposite —
+see "Triple constraints govern nothing on the dynamic path and everything on
+the schema path" below. GraphPack installs the constraints itself and also
+checks them in its own pass.
 → `tests/test_ontology_compiler.py::test_triple_constraints_are_derived_but_kept_out_of_the_engine_schema`
 
 **Reserved schema names.** `Settings.get_active_schema` short-circuits on
@@ -129,13 +132,47 @@ Measured together, on llama3.1:8b, M4, 16 GB, one 150-character chunk:
 **Neo4j is Community edition**, which supports exactly one database. Packs share
 `neo4j` and are separated by a `pack` property on every node.
 
-**`strict_schema_validation` is inert on the local path**, and the two facts
-above are why. Triple constraints never reach the extractor, and Ollama has to
-run on `DynamicLLMPathExtractor` — which invents types by design — because the
-schema extractor returns nothing. Set `strict_schema: true`, run 200 documents,
-and 58% of the entity labels written are types the ontology never declared:
-`URL`, `FUNCTION`, `FILE`, `DATE`, `CLASS`. Measured in
-[RESULTS.md](RESULTS.md); `validate-triples` is the only enforcement there is.
+**Triple constraints govern nothing on the dynamic path and everything on the
+schema path — and the engine forwards nobody's.** This corrects an earlier
+version of this note, which said they never reach the extractor at all.
+
+`SchemaManager.create_extractor` builds `SchemaLLMPathExtractor` with
+`possible_entities` and `possible_relations` and never passes
+`kg_validation_schema`. LlamaIndex then falls back to
+`DEFAULT_VALIDATION_SCHEMA` — its PRODUCT / MARKET / TECHNOLOGY example — and
+with `strict=True` discards every triple whose types are not in it
+(`schema_llm.py:317`). A pack's triples never are, so extraction returns
+nothing at all, and `_aextract` catches the failure and reports an empty list.
+GraphPack installs the pack's own constraints after construction.
+
+On the **dynamic** path the note's original claim holds: nothing constrains
+extraction, and `strict_schema: true` is inert. Ollama must run there — the
+schema extractor returns zero entities on it — so on a local model 58% of the
+entity labels written are types the ontology never declared: `URL`, `FUNCTION`,
+`FILE`, `DATE`, `CLASS`, and 17.8% of relations conform.
+
+On the **schema** path, with the constraints installed, conformance is 100% by
+construction: what does not conform is discarded rather than written. Both
+numbers are in [RESULTS.md](RESULTS.md).
+
+**Google's Developer API rejects a schema carrying properties.** LlamaIndex
+emits `additionalProperties` for an entity's property dict; the API refuses it
+with a message about Enterprise Agent Platform mode. Measured on one chunk with
+everything else held constant: with properties, `ValueError` and 0 triples;
+without, 5. So "can this provider carry properties" and "can it drive the schema
+extractor" are separate questions — `graphpack/models.py` keeps two sets.
+
+**`llama_index.llms.google_genai` calls `asyncio.run` inside its synchronous
+`_chat`**, and the async structured-output path reaches that method from inside
+a running loop, so every extraction dies on "asyncio.run() cannot be called from
+a running event loop". GraphPack dispatches the call with `asyncio.to_thread`,
+onto a thread with no loop of its own.
+
+**`SchemaLLMPathExtractor._aextract` swallows the errors that cause all of the
+above.** It catches `ValueError`, `TypeError` and `AttributeError` and returns
+no triplets, so an ingest reports success and writes nothing. Two unrelated
+faults hid behind that for a full run each. GraphPack's replacement logs what
+it caught.
 
 **Node metadata is part of the prompt.** LlamaIndex prepends every metadata key
 to a node's text as a `key: value` line before sending it to a model, so a field

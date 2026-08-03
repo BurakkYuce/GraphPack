@@ -12,9 +12,28 @@ Versions are [semantic](https://semver.org/) over the **pack contract** — the
 YAML, OWL, CSV and JSONL a pack is written in — not over the Python, which has
 no public API.
 
-## [Unreleased]
+## [0.1.0] — 2026-08-03
 
-### Added
+The first tagged version. Everything below happened before it, so this entry is
+a starting point rather than a delta — the sections are what a reader arriving
+at the tag should know about what it does and what it has shown.
+
+### The claim, as measured
+
+Three packs sharing no code, one of them added after the other two were finished
+and measured. `bench-wiki` cost 297 lines of configuration, 8 lines of GraphPack
+code (one new knob, `extract: false`) and **0 lines of engine change**, the last
+verified by CI on every push.
+
+| | |
+|---|---|
+| retrieval, MultiHop-RAG, 2,556 queries | MRR@10 **0.759**, Hit@1 0.631, Hit@10 0.977, ±2 points |
+| extraction, `tr-law` | F1 **81.4%**, precision 97.2%, over 150 gold edges |
+| extraction, `oss` — `thread_package` | F1 **57.5%**, recall 86.2%, over 94 gold edges |
+| extraction, `oss` — `dependencies` | F1 21.1% over 37 gold edges, ±13 and not offered as a conclusion |
+| graph against text, `bench-wiki` | 26.8% of a traversal's answer is recoverable from the top-30 passages |
+
+### Added — making a domain measurable, and making the project handover-ready
 - `domains/_template/` — a complete working pack for a made-up domain, every
   field commented. Validated in CI alongside the real packs, so it fails when
   the contract changes instead of going stale.
@@ -32,8 +51,29 @@ no public API.
 
 - `Scores.precision_ceiling`, and `graphpack eval` prints it when it binds. A
   gold set narrower than what extraction can claim caps precision below 100%,
-  and the bare number then reads as an error rate: oss's new task is capped at
-  61.9%, so its measured 52.8% has nine points of headroom rather than forty.
+  and the bare number then reads as an error rate rather than as headroom.
+- `hide_from_model` applied to the `oss` corpus. It had existed unused so the
+  committed configuration would match the published numbers; a re-run now costs
+  four minutes rather than ten hours, so that reason expired.
+
+### Measured, and it changed what the documentation claims
+- **oss became measurable.** Giving its threads `Issue` nodes and scoring them
+  with `document_edges` took the gold set from 24 edges to 94–135 and the
+  interval from ±13 points to ±6. Pure configuration: no GraphPack code, no
+  engine change, and no re-extraction — it scores the same run.
+- **A third of oss's graph was our own prompt.** 154 of 490 entities were named
+  by the `url:` line the pack attached, all typed `ISSUE`, `PACKAGE` or
+  `REPOSITORY`, so `validate-triples` reported 100% conforming throughout.
+  Hiding the field took it to 0.7% and *improved* the graph: repository edges
+  10 → 85, dependency F1 14.6% → 21.1%.
+- **The new task leaks about ten points.** Its gold comes from the repository
+  slug, which the model can see. Hiding the slug costs 86.2% → 74.8% recall, so
+  roughly three quarters of it is reading the thread. Measured rather than
+  argued, and `repo` stays visible because it is document content.
+- **Scores move between identical runs.** Never checked before. The same
+  configuration twice gave the same `thread_package` gold set (94, 94) and a
+  `dependencies` gold set that nearly halved (66, 37) — so the Wilson interval
+  on the second task understates its real uncertainty.
 
 ### Fixed
 - `graphpack inspect PACK` scoped nothing but the ontology it compared against.
@@ -56,30 +96,7 @@ no public API.
 - `graphpack eval` and `graphpack version` were missing from the README's
   command list.
 
----
-
-## [0.1.0] — 2026-08-02
-
-The first version where the central claim carries a number. Three packs sharing
-no code, one of them added after the other two were finished and measured.
-
-### The claim, as measured
-
-- **Third vertical after the fact.** `bench-wiki` cost 297 lines of
-  configuration, 8 lines of GraphPack code (one new knob, `extract: false`), and
-  0 lines of engine change — the last verified by CI on every push.
-- **Retrieval, on a published benchmark.** MultiHop-RAG, all 2,556 queries:
-  MRR@10 **0.759**, Hit@1 0.631, Hit@10 0.977, intervals ±2 points. Vector leg
-  only; no comparison to the published table is claimed.
-- **Extraction, `tr-law`.** F1 **81.4%**, precision 97.2%, recall 70.0%, over
-  150 gold edges.
-- **Extraction, `oss`.** F1 22.2% over *twenty* gold edges, ±13 — reported, and
-  explicitly not offered as a conclusion about anything.
-- **Graph against text.** On `bench-wiki`, 26.8% of a traversal's answer is
-  recoverable from the top-30 passages; 75% when the answer is eight entities,
-  12% when it is fifty-one.
-
-### Added
+### How it was built
 
 Eight phases, each with its own review round.
 
@@ -135,19 +152,20 @@ Every one of these produced a plausible number before it produced an error.
 - **And so was its replacement.** The remaining cause was then written down as
   backbone coverage. Widening the backbone eight-fold — 1,000 to 8,000 packages,
   2,437 to 25,367 edges — moved the gold set from 22 edges to 24.
-- The actual cause is structural: 69% of `oss` documents mention exactly one
-  package, and `backbone_edges` needs two. That is what the unreleased
-  `document_edges` work above addresses.
+- **The third diagnosis held.** The actual cause is structural: 69% of `oss`
+  documents mention exactly one package, and `backbone_edges` needs two. Written
+  down before it was run, then run — see the `document_edges` work above.
 - **`ENGINE.md` said the opposite of what is true** about triple constraints,
   and said an interrupted ingest costs everything when it costs only the graph.
   Both corrected against measurements.
 
 ### Known limits
 
-Stated in `docs/WRITEUP.md` rather than deferred: the `oss` measurement is weak
-on its own terms; the benchmark is vector-only and unreranked; the ablation
-covers one pack; article-level citations score nothing without context-dependent
-resolution; and every timing is a fact about one laptop with one 8B model.
+Stated in `docs/WRITEUP.md` rather than deferred: `oss`'s dependency task still
+supports no conclusion and its measurable task asks an easier question and leaks
+about ten points; the benchmark is vector-only and unreranked; hybrid retrieval
+has no number at all, because the engine's BM25 leg does not survive a process
+boundary; article-level citations score nothing without context-dependent
+resolution; and every local timing is a fact about one laptop with one 8B model.
 
-[Unreleased]: https://github.com/BurakkYuce/GraphPack/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/BurakkYuce/GraphPack/releases/tag/v0.1.0

@@ -198,6 +198,47 @@ load:
       properties:
         requirement: "{value}"
 
+  # Issue threads as nodes, not only as documents.
+  #
+  # This is what the tr-law pack has and this one did not. There, a decision is
+  # both a document and a graph node, so every statute it cites is a scoreable
+  # fact about that document: 150 gold edges out of 200 documents. Here the
+  # documents were outside the graph entirely, so gold could only come from two
+  # *related* packages happening to appear in the same thread — and 69% of these
+  # threads mention exactly one package, which is why widening the backbone
+  # eight-fold moved the gold set from 22 edges to 24.
+  #
+  # The id is the corpus id template character for character. `document_edges`
+  # joins these nodes to ingested documents on `d.id = chunk.ref_doc_id`, and a
+  # template that drifts by one character produces an empty gold set rather than
+  # an error. `packs validate` now checks the two agree.
+  - source: issues.jsonl
+    node:
+      label: Issue
+      id: "gh:{slug}#{number}"
+      properties:
+        title: "{title}"
+
+  # The thread belongs to a repository, and that repository belongs to a package.
+  # So "which package is this thread about" is a fact the index already publishes
+  # and no model is needed to obtain it — the same bargain as everything above.
+  #
+  # One package per thread, because the repos derive step is `unique: slug`. For
+  # a monorepo that means the package named is one of several the repository
+  # publishes, which puts some noise in the gold; it is not bias, and it is the
+  # honest limit of deriving this from published metadata alone.
+  - source: issues.jsonl
+    edge:
+      type: MENTIONS_PACKAGE
+      from: "gh:{slug}#{number}"
+      to: "pypi:{package|pypi_name}"
+
+  - source: issues.jsonl
+    edge:
+      type: REPORTED_IN
+      from: "gh:{slug}#{number}"
+      to: "gh:{slug}"
+
 # The unstructured half: issue threads become documents for the engine to chunk,
 # embed and extract from. What extraction pulls out of this prose is later
 # resolved against the backbone above — that comparison is the evaluation.

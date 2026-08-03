@@ -10,6 +10,30 @@
 # own text. Different generator, same bargain.
 
 tasks:
+  # Two tasks over one corpus, kept side by side on purpose.
+  #
+  # They score the same extraction run on two different questions, and the gap
+  # between them is a finding rather than a nuisance: `dependencies` asks whether
+  # extraction found a *pair* of related packages in one thread, which needs both
+  # ends present and in the backbone, and `thread_package` asks whether it found
+  # the one package the thread's own repository publishes.
+  #
+  # The first is the harder question and produced 24 scoreable edges out of 200
+  # documents — ±13 points, a number that supports no conclusion. The second is
+  # the easier question and should produce one per document that resolved
+  # anything at all. Reporting both is what makes the easier one honest: if
+  # `thread_package` scores near the ceiling, the task was too easy, and that is
+  # visible only next to a task that was not.
+  - name: thread_package
+    generator: document_edges
+    relation: MENTIONS_PACKAGE
+    backbone_relation: MENTIONS_PACKAGE
+    # The label the corpus documents themselves carry. The join is on id, so
+    # these nodes and the ingested documents must share an id template.
+    source_label: Issue
+    endpoint_label: Package
+    directed: true
+
   - name: dependencies
     generator: backbone_edges
     # The extracted relation being scored, as the ontology names it.

@@ -408,6 +408,29 @@ def test_a_document_edges_task_without_a_source_label_is_rejected(domains):
     assert any("needs 'source_label'" in e for e in result.errors)
 
 
+def test_a_pack_declaring_no_eval_tasks_is_valid(domains):
+    """`tasks: []` is a statement, not an omission: bench-wiki runs no extraction
+    and its ground truth is the benchmark's own labelling, scored elsewhere. The
+    contract used to treat an empty list and a missing key as the same thing, and
+    surfacing that cost a red CI run the first time eval.yaml errors stopped
+    being swallowed."""
+    domains("widgets", evaluation="tasks: []\nholdout: 0.0\n")
+
+    result = validate_pack("widgets")
+
+    assert result.ok, result.errors
+
+
+def test_an_eval_file_with_no_tasks_key_at_all_is_an_error(domains):
+    """The other half of the distinction — a truncated file, not a claim."""
+    domains("widgets", evaluation="holdout: 0.0\n")
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("'tasks' is missing" in e for e in result.errors)
+
+
 def test_an_out_of_range_holdout_is_an_error(domains):
     domains(
         "widgets",

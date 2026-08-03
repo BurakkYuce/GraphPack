@@ -81,9 +81,16 @@ def load_eval_rules(path: Path) -> EvalRules:
     if not isinstance(raw, dict):
         raise EvalError(f"{path}: top level must be a mapping")
 
-    entries = raw.get("tasks") or []
-    if not isinstance(entries, list) or not entries:
-        raise EvalError(f"{path}: 'tasks' must be a non-empty list")
+    # An empty list and a missing key are different statements, and collapsing
+    # them cost a red CI run. `tasks: []` is bench-wiki saying it has no
+    # extraction metrics — it runs no extraction, and its ground truth is the
+    # benchmark's own labelling, scored by `graphpack bench`. A missing or
+    # null `tasks` is a file somebody truncated. Only the second is an error.
+    if "tasks" not in raw:
+        raise EvalError(f"{path}: 'tasks' is missing — use 'tasks: []' for a pack with none")
+    entries = raw["tasks"]
+    if not isinstance(entries, list):
+        raise EvalError(f"{path}: 'tasks' must be a list, got {type(entries).__name__}")
 
     tasks = tuple(_parse_task(item, path, index) for index, item in enumerate(entries))
     names = [t.name for t in tasks]

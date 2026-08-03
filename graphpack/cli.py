@@ -691,6 +691,15 @@ def eval_command(
     with session_scope() as session:
         report = run_eval(session, loaded.name, rules, example_limit=max(examples, 10))
 
+    # Two different outcomes, and printing one message for both sends the reader
+    # to the wrong place: a pack that declares no extraction metrics is working
+    # as intended, and a pack whose tasks all failed to score is not.
+    if not rules.tasks:
+        console.print(
+            f"[yellow]{loaded.name} declares no eval tasks — it has no extraction metrics.[/yellow]"
+        )
+        raise typer.Exit(code=0)
+
     if not report.results:
         console.print("[yellow]No task produced a score.[/yellow]")
         raise typer.Exit(code=1)

@@ -190,10 +190,57 @@ def _check_eval_shape(pack: Pack, result: ValidationResult) -> None:
                 f"{task.endpoint_label}->{task.endpoint_label} edges; the backbone "
                 f"builds {shapes}. Use document_edges with a source_label for that shape."
             )
+        if task.generator == "document_edges":
+            _check_document_ids_match_the_corpus(task, sources, result)
+
+
+def _check_document_ids_match_the_corpus(task, sources, result: ValidationResult) -> None:
+    """The document nodes and the ingested documents must be the same documents.
+
+    `document_edges` joins the backbone to the corpus on `d.id = chunk.ref_doc_id`
+    — a string equality between an id a load step wrote and an id the corpus
+    block rendered. Nothing forces those two templates to agree, and when they do
+    not the join matches nothing: the gold set comes back empty and the run
+    reports "0 gold edges", which is what a corpus with genuinely no gold also
+    reports. Three separate failures this run were of exactly that shape, and
+    each was found by hand hours later.
+    """
+    if not sources.corpus:
+        return  # nothing ingested to join against; not this check's business
+
+    document_ids = {
+        spec.node.id for spec in sources.load if spec.node and spec.node.label == task.source_label
+    }
+    if not document_ids:
+        result.errors.append(
+            f"eval task '{task.name}' scores documents labelled {task.source_label}, "
+            f"which no load step writes"
+        )
+        return
+
+    corpus_ids = {spec.id for spec in sources.corpus if spec.id}
+    if not document_ids & corpus_ids:
+        result.errors.append(
+            f"eval task '{task.name}' joins {task.source_label} nodes to ingested documents "
+            f"on id, but no {task.source_label} step uses a corpus id template: nodes are "
+            f"built as {', '.join(sorted(document_ids))} and documents as "
+            f"{', '.join(sorted(corpus_ids))}. The join would match nothing and the gold "
+            f"set would come back empty rather than wrong."
+        )
 
 
 def _label_of(id_template: str, sources) -> str:
-    """The node label an edge endpoint template points at, by id prefix."""
+    """The node label an edge endpoint template points at.
+
+    An exact template match settles it; the prefix is the fallback. Prefixes
+    alone are ambiguous once two labels share a namespace — oss writes
+    repositories as `gh:{value|repo_slug}` and issues as `gh:{slug}#{number}`,
+    both of which have the prefix `gh:`, so by prefix every issue edge reads as
+    a repository edge.
+    """
+    for spec in sources.load:
+        if spec.node and spec.node.id == id_template:
+            return spec.node.label
     prefix = _prefix(id_template)
     for spec in sources.load:
         if spec.node and _prefix(spec.node.id) == prefix:

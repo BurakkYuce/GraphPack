@@ -7,6 +7,7 @@ not running.
 
 from __future__ import annotations
 
+import re
 import textwrap
 
 import pytest
@@ -114,10 +115,22 @@ def test_checksum_changes_when_behaviour_changes(versions):
 
 @pytest.mark.unit
 def test_shipped_migrations_are_discoverable():
-    """The real versions/ directory must satisfy the same rules."""
-    found = runner.discover()
+    """The real versions/ directory must satisfy the same rules.
 
-    assert [m.id for m in found] == ["001_core_runner", "002_core_pack_registry"]
+    Asserts the rules rather than the exact list. Pinning every id meant each new
+    migration edited this test to say the same thing again, which is churn that
+    teaches a reader nothing — and the property worth holding is that discovery
+    orders them, numbers them uniquely, and names them the way the runner
+    expects.
+    """
+    found = runner.discover()
+    ids = [m.id for m in found]
+
+    assert ids[:2] == ["001_core_runner", "002_core_pack_registry"]
+    assert ids == sorted(ids), "migrations must be discovered in file order"
+    numbers = [int(i.split("_", 1)[0]) for i in ids]
+    assert numbers == sorted(set(numbers)), f"duplicate or out-of-order numbers: {ids}"
+    assert all(re.fullmatch(r"\d{3}_[a-z]+_[a-z0-9_]+", i) for i in ids), ids
 
 
 # ----------------------------------------------------------------------

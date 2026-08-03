@@ -132,6 +132,34 @@ Measured together, on llama3.1:8b, M4, 16 GB, one 150-character chunk:
 **Neo4j is Community edition**, which supports exactly one database. Packs share
 `neo4j` and are separated by a `pack` property on every node.
 
+**Every RANGE index is label-scoped, and a graph keyed on identifiers cannot
+always name a label.** This is Neo4j's rather than the engine's, and it cost
+this project half an hour per load before anyone looked.
+
+An edge names its endpoints by identifier. A pack's identifiers span every label
+it declares — `pypi:requests` is a `Package`, `gh:psf/requests` a `Repository` —
+so the endpoint match was written without one:
+
+```cypher
+MATCH (a {pack: $pack, id: row.start})
+```
+
+That match can use no index at all, so it scans every node in the database once
+per batch. Measured on the oss backbone: batches climbing from 15 seconds to
+nearly two minutes as the graph filled, and **thirty minutes to load 92,023
+rows**.
+
+The fix is one shared label. Every loaded node now carries `:Thing` alongside its
+own, the endpoint match names it, and there is a `(pack, id)` index on it:
+
+```
+  30 minutes  ->  5 seconds        (oss, 92,023 rows, identical counts)
+```
+
+An index rather than a constraint, deliberately: uniqueness is already enforced
+per label, and imposing it across labels would invent a new way for a load to
+fail. Two labels in one pack sharing an identifier is unusual but not incoherent.
+
 **Triple constraints govern nothing on the dynamic path and everything on the
 schema path — and the engine forwards nobody's.** This corrects an earlier
 version of this note, which said they never reach the extractor at all.

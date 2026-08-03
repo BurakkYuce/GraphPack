@@ -109,6 +109,19 @@ def ensure_constraints(session, sources: Sources) -> list[str]:
         statements.append(
             f"CREATE INDEX graphpack_{safe}_pack IF NOT EXISTS FOR (n:{label}) ON (n.pack)"
         )
+
+    # The one every label shares, and the reason edge loading is not quadratic.
+    # See SHARED_LABEL.
+    #
+    # An index rather than a constraint, deliberately. Uniqueness is already
+    # enforced per label above, where it means something. Imposing it across
+    # labels as well would invent a new way for a load to fail — two labels in
+    # one pack sharing an identifier is unusual but not incoherent, and it is
+    # not this index's business to forbid it.
+    statements.append(
+        f"CREATE INDEX graphpack_shared_identity IF NOT EXISTS "
+        f"FOR (n:{SHARED_LABEL}) ON (n.pack, n.id)"
+    )
     for statement in statements:
         session.run(statement)
     logger.info("Constraints ensured for labels: %s", ", ".join(sources.node_labels) or "none")
@@ -285,9 +298,24 @@ def _identity(template: str, row: dict[str, Any], sources: Sources) -> str | Non
 # Cypher
 # ----------------------------------------------------------------------
 
-_MERGE_NODE = """
+#: Every loaded node carries its own label *and* `Thing`, and the second one is
+#: what makes edge loading finish.
+#:
+#: An edge names its endpoints by id, and a pack's ids span every label it
+#: declares — `pypi:requests` is a Package, `gh:psf/requests` a Repository — so
+#: the endpoint match cannot name a label. Neo4j's RANGE indexes are all
+#: label-scoped, so a label-less match uses none of them and scans every node in
+#: the database once per batch. Measured on oss: batches climbing from 15
+#: seconds to nearly two minutes, and half an hour to load 25,385 edges.
+#:
+#: One shared label fixes it, and the index for it was already there —
+#: migration 002 creates `(pack, id)` on `Thing`, and until now nothing carried
+#: the label. See migration 003, which backfills it.
+SHARED_LABEL = "Thing"
+
+_MERGE_NODE = f"""
 UNWIND $rows AS row
-MERGE (n:{label} {{pack: $pack, id: row.id}})
+MERGE (n:{{label}}:{SHARED_LABEL} {{{{pack: $pack, id: row.id}}}})
 SET n += row.props
 RETURN count(n) AS matched
 """
@@ -296,11 +324,14 @@ RETURN count(n) AS matched
 # loaded set is dropped rather than conjured as a bare node. Keeping the graph
 # closed over what was actually fetched is what lets a missing edge be read as a
 # genuine absence when extraction is evaluated against it.
-_MERGE_EDGE = """
+#
+# `:Thing` here is not a filter — every loaded node has it — it is the label
+# that lets the index be used at all. See SHARED_LABEL.
+_MERGE_EDGE = f"""
 UNWIND $rows AS row
-MATCH (a {{pack: $pack, id: row.start}})
-MATCH (b {{pack: $pack, id: row.end}})
-MERGE (a)-[r:{type}]->(b)
+MATCH (a:{SHARED_LABEL} {{{{pack: $pack, id: row.start}}}})
+MATCH (b:{SHARED_LABEL} {{{{pack: $pack, id: row.end}}}})
+MERGE (a)-[r:{{type}}]->(b)
 SET r += row.props
 RETURN count(r) AS matched
 """

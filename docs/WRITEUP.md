@@ -204,8 +204,11 @@ If the thesis is right, the transferable parts are not the packs:
   separate Cypher pass, rather than inside ingest, means rules can change and be
   re-run in seconds instead of hours. On a 10-hour ingest that is the difference
   between iterating and not.
-- **Enforcing the ontology yourself.** The engine accepts a schema and does not
-  apply it. Anybody building on a similar stack is in the same position and
-  probably does not know it.
+- **Enforcing the ontology yourself.** The engine accepts a schema and forwards
+  no constraints, and the library underneath then validates against its own
+  example schema — so extraction either ignores the ontology or returns nothing,
+  depending on the extractor, and neither raises. Anybody building on a similar
+  stack is in the same position and probably does not know it. One query catches
+  it: are the extracted relation types the ones the ontology declares?
 - **Intervals on every score.** Small sets produce confident-looking numbers.
   The interval is what stopped 22.2% from being reported as a result.

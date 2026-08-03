@@ -421,10 +421,19 @@ indexed, which is why it is the measurement above.
 ## What has not been measured
 
 - **Article-level citations.** No gold survives resolution; see above.
-- **A controlled comparison of extractors.** oss ran on ollama with the dynamic
-  extractor, tr-law on gemini with the schema extractor. Everything differs at
-  once, so the two F1 figures cannot be attributed. Re-running oss on the same
-  setup as tr-law would settle it and costs about a dollar.
+- **oss under a gold generator that fits it.** Its documents are not entities,
+  so `backbone_edges` needs a coincidence that 69% of the corpus does not
+  supply. Giving each thread an `Issue` node with `MENTIONS_PACKAGE` edges from
+  its metadata would make `document_edges` available. Pack change, no model, and
+  the one change that would make the second domain measurable.
+- **oss's prompt contamination.** `url`, `state` and `created_at` still reach
+  the model as document text — the mechanism to hide them exists
+  (`hide_from_model`) and was deliberately not applied, so the committed
+  configuration matched the run that produced the numbers. Re-measuring now
+  costs five minutes rather than ten hours.
+- **tr-law's ablation, unconfounded.** Its graph holds 1,578 decisions and 200
+  are ingested, so the 5.9% is mostly sampling. Ingesting the full corpus would
+  make it a second clean data point beside bench-wiki's 26.8%.
 - **Hybrid retrieval.** Every benchmark number above is the vector leg alone.
 - **The published MultiHop-RAG table.** See above: matching its setup is a
   separate run, not a paragraph.

@@ -76,3 +76,22 @@ intents:
       RETURN s.id AS id, s.name AS name, count(a) AS weight, 'COVERED' AS via
       ORDER BY weight DESC
       LIMIT {limit}
+
+# The paper's reranker, declared but not applied.
+#
+# MultiHop-RAG's largest single lever is this model: voyage-02 goes from MRR@10
+# 0.393 to 0.586 with nothing else changed. Naming it here is what lets
+# `graphpack bench bench-wiki --rerank` be a comparison against that row rather
+# than against a reranker of our own choosing.
+#
+# Declaring it changes nothing. Every number in docs/RESULTS.md was measured
+# without a reranker, and a block that took effect on its own would move all of
+# them at once with no test going red — so the run has to ask too.
+#
+# `fetch_factor: 3` is the honest part: a cross-encoder re-orders and cannot
+# promote what the retriever never returned, so scoring 20 reranked results
+# means retrieving 60 first. A reranked run is "60 retrieved, cut to 20"
+# against "20 retrieved" — two variables, and the output says so.
+rerank:
+  model: BAAI/bge-reranker-large
+  fetch_factor: 3

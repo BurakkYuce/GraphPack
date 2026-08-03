@@ -74,7 +74,7 @@ points.
 published was the vector leg alone — not by choice, but because the engine's
 BM25 docstore lives in memory on the object that ingested, so a benchmark run as
 a separate command has vectors and nothing else. Doing both in one process
-(`bench --ingest --hybrid`) scores the fusion retriever: MRR@10 **0.777**, Hit@4
+(`bench --ingest --hybrid`) scores the fusion retriever: MRR@10 **0.782**, Hit@4
 0.909 → **0.953**. Hit@1 does not move at all. Fusion is not finding a better
 first answer; it is pulling more of the right articles into positions two
 through four — which for a multi-hop benchmark, where an answer rests on

@@ -167,7 +167,31 @@ def _retriever(system, top_k: int, hybrid: bool):
     return retriever
 
 
-def retrieve(system, question: str, top_k: int, hybrid: bool = False) -> list[str]:
+def retrieve_nodes(system, question: str, top_k: int, hybrid: bool = False, rerank=None) -> list:
+    """The retrieved nodes themselves, optionally re-ordered by a cross-encoder.
+
+    The one place retrieval happens, so that the article-level and chunk-level
+    scorers cannot drift apart in what they retrieved — only in how they reduce
+    it.
+
+    ``rerank`` is a ``Rerank`` from the pack's contract or ``None``. When set,
+    the leg underneath is widened to ``fetch_factor * top_k`` first: a
+    cross-encoder re-orders, and cannot promote what was never returned.
+    """
+    from graphpack.loop import run
+
+    depth = rerank.candidates_for(top_k) if rerank else top_k
+    retriever = _retriever(system, depth, hybrid)
+    nodes = run(retriever.aretrieve(question))
+
+    if rerank:
+        from graphpack.bench.rerank import rerank_nodes
+
+        nodes = rerank_nodes(nodes, question, rerank.model, top_n=rerank.top_n or top_k)
+    return nodes
+
+
+def retrieve(system, question: str, top_k: int, hybrid: bool = False, rerank=None) -> list[str]:
     """Retrieved chunks, as the ids of the documents they came from.
 
     Not through ``system.search``: that returns
@@ -182,14 +206,11 @@ def retrieve(system, question: str, top_k: int, hybrid: bool = False) -> list[st
     unavailable in a process that has not ingested, because the BM25 docstore
     lives in memory and belongs to the object that built it.
     """
-    from graphpack.loop import run
-
-    retriever = _retriever(system, top_k, hybrid)
-    nodes = run(retriever.aretrieve(question))
+    nodes = retrieve_nodes(system, question, top_k, hybrid=hybrid, rerank=rerank)
     return [(node.node.ref_doc_id or "").strip() for node in nodes]
 
 
-def retrieve_chunks(system, question: str, top_k: int, hybrid: bool = False):
+def retrieve_chunks(system, question: str, top_k: int, hybrid: bool = False, rerank=None):
     """Retrieved chunks as ``(document id, text)``, in rank order.
 
     The article-level scoring above throws the text away, because it only needs
@@ -197,10 +218,7 @@ def retrieve_chunks(system, question: str, top_k: int, hybrid: bool = False):
     chunks and a chunk counts when it *contains* a piece of evidence, so that
     comparison needs the text back.
     """
-    from graphpack.loop import run
-
-    retriever = _retriever(system, top_k, hybrid)
-    nodes = run(retriever.aretrieve(question))
+    nodes = retrieve_nodes(system, question, top_k, hybrid=hybrid, rerank=rerank)
     return [((n.node.ref_doc_id or "").strip(), n.node.get_content() or "") for n in nodes]
 
 
@@ -218,7 +236,7 @@ def _normalise(text: str) -> str:
 
 
 def score_chunks(
-    system, queries, top_k: int, hybrid: bool = False, ks=(1, 2, 4, 10), progress=None
+    system, queries, top_k: int, hybrid: bool = False, ks=(1, 2, 4, 10), progress=None, rerank=None
 ):
     """Score at the granularity MultiHop-RAG uses: chunks, not articles.
 
@@ -246,7 +264,7 @@ def score_chunks(
         wanted = {_normalise(fact): fact for fact in query.facts}
         ranked: list[str] = []
         try:
-            chunks = retrieve_chunks(system, query.question, top_k, hybrid=hybrid)
+            chunks = retrieve_chunks(system, query.question, top_k, hybrid=hybrid, rerank=rerank)
         except Exception as exc:  # noqa: BLE001 — one bad query is not a bad run
             logger.warning("Retrieval failed for %r — %s", query.question[:60], exc)
             chunks = []
@@ -268,11 +286,11 @@ def score_chunks(
 
 
 def run_query(
-    system, query: BenchQuery, top_k: int = DEFAULT_TOP_K, hybrid: bool = False
+    system, query: BenchQuery, top_k: int = DEFAULT_TOP_K, hybrid: bool = False, rerank=None
 ) -> QueryResult:
     """Retrieve for one question and reduce the chunks to ranked articles."""
     try:
-        documents = retrieve(system, query.question, top_k, hybrid=hybrid)
+        documents = retrieve(system, query.question, top_k, hybrid=hybrid, rerank=rerank)
     except RetrieverUnavailable:
         raise  # a missing leg is a setup error, not a query that scored zero
     except Exception as exc:
@@ -305,11 +323,12 @@ def run_benchmark(
     ks: tuple[int, ...] = (1, 2, 4, MRR_DEPTH),
     progress=None,
     hybrid: bool = False,
+    rerank=None,
 ) -> BenchScores:
     """Run every query and score the lot."""
     results = []
     for index, query in enumerate(queries, start=1):
-        results.append(run_query(system, query, top_k=top_k, hybrid=hybrid))
+        results.append(run_query(system, query, top_k=top_k, hybrid=hybrid, rerank=rerank))
         if progress and index % 50 == 0:
             progress(index, len(queries))
 

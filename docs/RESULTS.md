@@ -706,10 +706,10 @@ uv run graphpack bench bench-wiki --ingest --hybrid
 | | vector only | **hybrid** | change |
 |---|---:|---:|---:|
 | Hit@1 | 0.631 | 0.631 | **0.000** |
-| Hit@2 | 0.794 | **0.847** | +0.053 |
+| Hit@2 | 0.794 | **0.872** | +0.078 |
 | Hit@4 | 0.909 | **0.953** | +0.044 |
-| Hit@10 | 0.977 | **0.987** | +0.010 |
-| MRR@10 | 0.759 | **0.777** | +0.018 |
+| Hit@10 | 0.977 | **0.992** | +0.015 |
+| MRR@10 | 0.759 | **0.782** | +0.023 |
 
 **Hit@1 does not move at all, and everything below it does.** Fusion is not
 finding a better first answer; it is pulling more of the right articles into
@@ -717,6 +717,43 @@ positions two through four, where a vector-only ranking had them further down.
 For a multi-hop benchmark — where a query rests on several articles and the
 system needs them all — that is the more useful half of the ranking, and it is
 also the half a single-number summary hides.
+
+#### This table is a correction, and the old row is reproducible on demand
+
+It first read Hit@2 0.847, Hit@10 0.987, MRR@10 0.777. **Those numbers were
+measured on a corpus that held two copies of every passage**, and this is not an
+inference — the old row was reproduced exactly, all five figures, by
+deliberately ingesting twice:
+
+| | duplicated (as published) | **clean** |
+|---|---:|---:|
+| Qdrant points | 17,854 | **8,927** |
+| Hit@1 | 0.631 | 0.631 |
+| Hit@2 | 0.847 | **0.872** |
+| Hit@4 | 0.953 | 0.953 |
+| Hit@10 | 0.987 | **0.992** |
+| MRR@10 | 0.777 | **0.782** |
+
+The clean run was made twice, from `pack reset` each time, and the two agree to
+every printed digit — so the difference is the corpus, not variance.
+
+**Why nothing caught it.** `bench --ingest` refuses to ingest over a populated
+pack, precisely so this cannot happen. It counted `:Chunk` nodes in Neo4j. A
+pack with `extract: false` never writes any — the corpus goes to Qdrant and the
+graph stays empty — so on `bench-wiki`, *the pack the guard was written for*, it
+read zero for a full corpus and could not fire. The guard now counts Qdrant
+points, and it exists on `ingest` as well as `bench --ingest`.
+
+**What duplication does to a ranking**, since it is not obvious: it does not add
+wrong answers, it spends positions. Thirty retrieved chunks reach half as many
+distinct articles when every chunk appears twice, so an article that was ranked
+fourth is pushed past the cut. That is why Hit@1 is identical — the best chunk
+is still the best chunk — and why the loss lands in the middle of the ranking.
+
+**Vector-only was never affected.** A plain `bench` run does not ingest, so it
+could not duplicate; the 0.759 / 0.909 / 0.977 row above was re-measured on the
+clean corpus and reproduces exactly. Only the `--ingest` path could write a
+second copy, and only the hybrid table came from it.
 
 Both legs are scored at the same depth. The vector retriever is built per call
 at `--top-k`; the fusion retriever was built during the ingest at whatever depth
@@ -988,10 +1025,14 @@ question.
 - ~~**tr-law's ablation, unconfounded.**~~ Done: the full corpus is ingested and
   the answer is **7.6%**, against bench-wiki's 26.8%. The sampling was worth
   removing and was not what made the number low.
-- ~~**Hybrid retrieval.**~~ Run: MRR@10 0.759 -> **0.777**, Hit@4 0.909 ->
+- ~~**Hybrid retrieval.**~~ Run: MRR@10 0.759 -> **0.782**, Hit@4 0.909 ->
   0.953, and Hit@1 unchanged. See [The full-text half, measured at
   last](#the-full-text-half-measured-at-last).
-- **Run-to-run variance on anything but oss.** Measured there for the first time
+- ~~**Run-to-run variance on bench-wiki.**~~ Measured: `pack reset` and a full
+  `--ingest --hybrid` run, twice, agree to every printed digit. That is what
+  made the corpus-duplication correction above attributable rather than a
+  shrug — a difference that survives two identical runs is not variance.
+- **Run-to-run variance on tr-law.** Measured on oss for the first time
   and it mattered: the same configuration twice gave a `dependencies` gold set
   of 66 and then 37. Nothing here says whether tr-law or the benchmark move
   that much, and the intervals throughout this document assume they do not.

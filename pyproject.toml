@@ -29,6 +29,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Reranking only. A cross-encoder pulls a large model stack that nothing else
+# here needs, and every number in docs/RESULTS.md was measured without one — so
+# it stays out of the default install and out of CI.
+rerank = [
+    "sentence-transformers>=3.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",

@@ -1053,6 +1053,10 @@ def viz_command(
 def bench_command(
     pack: str = typer.Argument(..., help="Pack to benchmark."),
     limit: int = typer.Option(0, "--limit", "-n", help="Score only the first N queries."),
+    sample: int = typer.Option(
+        0, "--sample", help="Score N queries chosen at random, reproducibly. Prefer over --limit."
+    ),
+    seed: int = typer.Option(0, "--seed", help="Seed for --sample."),
     top_k: int = typer.Option(30, "--top-k", help="How deep to retrieve per query."),
     ingest: bool = typer.Option(
         False, "--ingest", help="Ingest the corpus first, in this process. Needed for --hybrid."
@@ -1064,6 +1068,11 @@ def bench_command(
         False,
         "--chunk-level",
         help="Score chunks the way MultiHop-RAG does, rather than articles.",
+    ),
+    rerank: bool = typer.Option(
+        False,
+        "--rerank",
+        help="Re-order results with the pack's cross-encoder. Needs a `rerank:` block.",
     ),
 ) -> None:
     """Score the corpus half against a published benchmark's own ground truth.
@@ -1079,6 +1088,7 @@ def bench_command(
     until now was vector-only. Doing both in one process is what makes the other
     number exist.
     """
+    from graphpack.agent.contract import load_retrieval_rules
     from graphpack.backbone import session_scope
     from graphpack.bench import BenchError, load_gold, run_benchmark
     from graphpack.bench.runner import check_gold_is_reachable
@@ -1087,14 +1097,49 @@ def bench_command(
     loaded = load_pack(pack)
     data = loaded.root / "data"
 
+    # Two switches, deliberately. A pack declaring `rerank:` changes nothing on
+    # its own — every published number was measured without one, and a default
+    # that re-ordered results would invalidate them all without a test going red.
+    reranker = None
+    if rerank:
+        reranker = load_retrieval_rules(loaded.path("retrieval.yaml")).rerank
+        if reranker is None:
+            err_console.print(
+                f"[red]--rerank, but {loaded.name} declares no `rerank:` block[/red] in "
+                f"retrieval.yaml. The model is the pack's choice, not this command's, "
+                f"so there is no default to fall back on."
+            )
+            raise typer.Exit(code=1)
+        # Loaded now rather than on the first query: 1.3 GB and a download, and
+        # a benchmark that fails at query 1 of 2,556 should fail before query 1.
+        from graphpack.bench.rerank import RerankError, load_reranker
+
+        try:
+            load_reranker(reranker.model)
+        except RerankError as exc:
+            err_console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+
     try:
         queries = load_gold(data / "gold.jsonl", data / "queries.jsonl")
     except BenchError as exc:
         err_console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
+    if limit and sample:
+        err_console.print("[red]error[/red] --limit and --sample select differently; pick one.")
+        raise typer.Exit(code=1)
     if limit:
         queries = queries[:limit]
+    if sample:
+        # The same rule the ingest command carries, for the same reason: file
+        # order is whatever the fetch iterated over. The first 500 of this gold
+        # run 41% comparison queries against 38% overall — small, but a
+        # reranker's effect differs by question type, so a subset that is not
+        # the corpus in miniature measures the subset.
+        import random
+
+        queries = random.Random(seed).sample(queries, min(sample, len(queries)))
     if not queries:
         err_console.print("[red]No queries to run.[/red]")
         raise typer.Exit(code=1)
@@ -1135,6 +1180,15 @@ def bench_command(
 
     leg = "hybrid (vector + BM25 + graph)" if hybrid else "vector only"
     console.print(f"Running {len(queries)} query(ies) at top-{top_k}, {leg}...")
+    if reranker:
+        # Said out loud because it is the confounder: a reranked run retrieved
+        # more before it cut down, so this is not one variable against one.
+        console.print(
+            f"  reranking with {reranker.model} — "
+            f"{reranker.candidates_for(top_k)} retrieved, cut to "
+            f"{reranker.top_n or top_k}",
+            style="dim",
+        )
     if chunk_level:
         from graphpack.bench.runner import score_chunks
 
@@ -1144,6 +1198,7 @@ def bench_command(
             top_k,
             hybrid=hybrid,
             progress=lambda done, total: console.print(f"  {done}/{total}", style="dim"),
+            rerank=reranker,
         )
         table = Table("metric", "value", "95% interval")
         for k in (1, 2, 4, 10):
@@ -1169,6 +1224,7 @@ def bench_command(
         top_k=top_k,
         progress=lambda done, total: console.print(f"  {done}/{total}", style="dim"),
         hybrid=hybrid,
+        rerank=reranker,
     )
 
     table = Table("metric", "value", "95% interval")

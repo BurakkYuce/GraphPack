@@ -70,11 +70,40 @@ class Intent:
 
 
 @dataclass(frozen=True)
+class Rerank:
+    """A cross-encoder re-ordering of what the retriever returned.
+
+    Off unless a pack asks for it, and off even then unless a run asks for it —
+    every number this project has published was measured without one, and a
+    default that silently changed retrieval would invalidate all of them at
+    once. ``graphpack bench --rerank`` is the only thing that turns it on.
+
+    The over-fetch is the part worth stating: a reranker cannot promote a
+    passage the retriever never returned, so scoring *k* reranked results means
+    retrieving ``k * fetch_factor`` first. Comparing reranked-at-20 against
+    plain-at-20 is therefore not a comparison of one variable, and the honest
+    description is "60 retrieved and cut to 20" against "20 retrieved".
+    """
+
+    model: str = "BAAI/bge-reranker-large"
+    #: How many results survive. ``None`` keeps the run's own depth.
+    top_n: int | None = None
+    #: Retrieve this multiple of the scored depth before re-ordering.
+    fetch_factor: int = 3
+
+    def candidates_for(self, top_k: int) -> int:
+        return max(top_k, top_k * self.fetch_factor)
+
+
+@dataclass(frozen=True)
 class RetrievalRules:
     intents: tuple[Intent, ...]
     #: Cypher for turning a name into candidate entities, when the agent has to
     #: find what the question is about before it can traverse.
     lookup: str = ""
+    #: Present when the pack declares a `rerank:` block. Never applied unless a
+    #: run asks for it.
+    rerank: Rerank | None = None
 
     def by_name(self, name: str) -> Intent | None:
         for intent in self.intents:
@@ -117,7 +146,47 @@ def load_retrieval_rules(path: Path) -> RetrievalRules:
     if lookup:
         _check_cypher(lookup, f"{path}: lookup")
 
-    return RetrievalRules(intents=intents, lookup=lookup)
+    return RetrievalRules(
+        intents=intents, lookup=lookup, rerank=_parse_rerank(raw.get("rerank"), path)
+    )
+
+
+def _parse_rerank(item: Any, path: Path) -> Rerank | None:
+    """Parse an optional ``rerank:`` block.
+
+    A missing block and an empty one both mean "this pack declares no
+    reranker", which is different from a block with bad values — those are
+    rejected here rather than at the end of a benchmark run.
+    """
+    if item is None:
+        return None
+    if not isinstance(item, dict):
+        raise RetrievalError(f"{path}: 'rerank' must be a mapping")
+    if not item:
+        return None
+
+    where = f"{path}: rerank"
+    unknown = set(item) - {"model", "top_n", "fetch_factor"}
+    if unknown:
+        raise RetrievalError(f"{where}: unknown key(s) {sorted(unknown)}")
+
+    model = str(item.get("model") or "").strip()
+    if not model:
+        raise RetrievalError(f"{where} is missing 'model'")
+
+    def _positive(key: str, default: int | None) -> int | None:
+        value = item.get(key, default)
+        if value is None:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise RetrievalError(f"{where}: '{key}' must be a positive integer")
+        return value
+
+    return Rerank(
+        model=model,
+        top_n=_positive("top_n", None),
+        fetch_factor=_positive("fetch_factor", 3) or 3,
+    )
 
 
 def _parse_intent(item: Any, path: Path, index: int) -> Intent:

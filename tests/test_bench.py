@@ -315,3 +315,55 @@ def test_retrieval_that_returns_no_identity_is_counted_as_unattributed():
 
     assert got.unattributed == 2
     assert got.ranked == ("mhr:a",)
+
+
+# ----------------------------------------------------------------------
+# The paper's metric, beside ours
+# ----------------------------------------------------------------------
+
+
+def test_the_papers_hit_at_k_is_recall_over_the_evidence_set():
+    """MultiHop-RAG defines Hit@K as "the fraction of evidence that appears in
+    the top-K retrieved set" (arXiv:2401.15391, §2.3). A query resting on four
+    articles scores 0.25 there when one is found, and 1.0 here under `hit_at`.
+
+    This repository published the second under the first's name, and the size of
+    the resulting lead — 0.759 against a best published 0.586 — was the clue."""
+    got = result(["a"], ["a", "b", "c", "d"])
+
+    assert got.hit_at(10) is True
+    assert got.evidence_recall_at(10) == pytest.approx(0.25)
+
+
+def test_evidence_recall_is_one_only_when_everything_is_found():
+    assert result(["a", "b"], ["a", "b"]).evidence_recall_at(10) == pytest.approx(1.0)
+
+
+def test_evidence_recall_respects_the_cut():
+    """Same k semantics as hit_at: what is below the line does not count."""
+    got = result(["x", "y", "a", "b"], ["a", "b"])
+
+    assert got.evidence_recall_at(2) == pytest.approx(0.0)
+    assert got.evidence_recall_at(4) == pytest.approx(1.0)
+
+
+def test_a_null_query_scores_zero_rather_than_dividing_by_zero():
+    assert result([], []).evidence_recall_at(10) == 0.0
+
+
+def test_both_quantities_are_aggregated_side_by_side():
+    """So a report can print them together and the difference can be read off
+    rather than argued about."""
+    scores = score([result(["a"], ["a", "b"]), result(["c", "d"], ["c", "d"])])
+
+    assert scores.hit_rate(10) == pytest.approx(1.0)
+    assert scores.evidence_recall(10) == pytest.approx(0.75)
+
+
+def test_evidence_matching_survives_the_whitespace_chunking_introduces():
+    """The evidence is quoted verbatim from the articles, so it is present — but
+    chunking and the metadata prepended to every chunk leave the line breaks
+    different. Matching raw strings loses real hits to a newline."""
+    from graphpack.bench.runner import _normalise
+
+    assert _normalise("The  quick\nbrown\tfox") == _normalise("the quick brown fox")

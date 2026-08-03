@@ -45,6 +45,26 @@ class QueryResult:
     def hit_at(self, k: int) -> bool:
         return bool(self.gold & set(self.ranked[:k]))
 
+    def evidence_recall_at(self, k: int) -> float:
+        """The paper's Hit@K: *the fraction of evidence* in the top K.
+
+        Not the same quantity as ``hit_at``, and the difference is not small. A
+        query resting on four articles scores 1.0 here only when all four are
+        retrieved; ``hit_at`` scores it 1.0 for any one of them. On a multi-hop
+        benchmark — where the whole premise is that an answer needs several
+        pieces — that is the demanding version and the one MultiHop-RAG quotes:
+
+            "Hit@K metric measures the fraction of evidence that appears in the
+            top-K retrieved set."  (arXiv:2401.15391, §2.3)
+
+        Reported beside ours rather than instead of it. Ours answers "did
+        retrieval find *an* answer", which is a fair question and a different
+        one; publishing it under the paper's name was the mistake this fixes.
+        """
+        if not self.gold:
+            return 0.0
+        return len(self.gold & set(self.ranked[:k])) / len(self.gold)
+
 
 @dataclass(frozen=True)
 class BenchScores:
@@ -52,6 +72,10 @@ class BenchScores:
 
     queries: int
     hits: dict[int, int]
+    #: Summed evidence recall per k — the paper's Hit@K before averaging. Kept
+    #: apart from ``hits`` because they are different quantities with the same
+    #: name in two different papers; see ``QueryResult.evidence_recall_at``.
+    evidence: dict[int, float]
     #: Sum of 1/rank over queries with a hit inside MRR_DEPTH.
     reciprocal: float
     unattributed: int
@@ -69,6 +93,10 @@ class BenchScores:
 
     def hit_rate(self, k: int) -> float:
         return self.hits.get(k, 0) / self.queries if self.queries else 0.0
+
+    def evidence_recall(self, k: int) -> float:
+        """The paper's Hit@K, averaged over answerable queries."""
+        return self.evidence.get(k, 0.0) / self.queries if self.queries else 0.0
 
     def interval(self, k: int) -> tuple[float, float]:
         return _wilson(self.hits.get(k, 0), self.queries)
@@ -96,11 +124,13 @@ def score(results: list[QueryResult], ks: tuple[int, ...] = (1, 2, 4, 10)) -> Be
     null = [r for r in results if not r.gold]
 
     hits = {k: sum(1 for r in answerable if r.hit_at(k)) for k in ks}
+    evidence = {k: sum(r.evidence_recall_at(k) for r in answerable) for k in ks}
     reciprocal = sum(1.0 / r.first_hit for r in answerable if r.first_hit)
 
     return BenchScores(
         queries=len(answerable),
         hits=hits,
+        evidence=evidence,
         reciprocal=reciprocal,
         unattributed=sum(r.unattributed for r in results),
         retrieved=sum(len(r.ranked) + r.unattributed for r in results),

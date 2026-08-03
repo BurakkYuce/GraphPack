@@ -1024,6 +1024,11 @@ def bench_command(
     hybrid: bool = typer.Option(
         False, "--hybrid", help="Score the fusion retriever instead of the vector leg alone."
     ),
+    chunk_level: bool = typer.Option(
+        False,
+        "--chunk-level",
+        help="Score chunks the way MultiHop-RAG does, rather than articles.",
+    ),
 ) -> None:
     """Score the corpus half against a published benchmark's own ground truth.
 
@@ -1111,6 +1116,28 @@ def bench_command(
 
     leg = "hybrid (vector + BM25 + graph)" if hybrid else "vector only"
     console.print(f"Running {len(queries)} query(ies) at top-{top_k}, {leg}...")
+    if chunk_level:
+        from graphpack.bench.runner import score_chunks
+
+        chunk_scores = score_chunks(system, [q for q in queries if q.gold], top_k, hybrid=hybrid)
+        table = Table("metric", "value", "95% interval")
+        for k in (1, 2, 4, 10):
+            low, high = chunk_scores.interval(k)
+            table.add_row(
+                f"Hit@{k} (any)", f"{chunk_scores.hit_rate(k):.3f}", f"{low:.3f} – {high:.3f}"
+            )
+            table.add_row(
+                f"Hit@{k} (evidence recall)", f"{chunk_scores.evidence_recall(k):.3f}", ""
+            )
+        table.add_row("MRR@10", f"{chunk_scores.mrr:.3f}", "")
+        console.print("\n[bold]Chunk level — the granularity MultiHop-RAG scores at[/bold]")
+        console.print(table)
+        console.print(
+            "[dim]A chunk counts when it contains a piece of the query's evidence. "
+            "'evidence recall' is the paper's Hit@K; 'any' is the one this project "
+            "has been reporting.[/dim]"
+        )
+        raise typer.Exit(code=0)
     scores = run_benchmark(
         system,
         queries,

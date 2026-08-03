@@ -49,9 +49,18 @@ fetch:
       evidence_list: evidence_list
 
 derive:
-  # One row per (query, evidence article): the gold retrieval set, flattened.
-  # `unique` is deliberately absent — a query citing the same article twice is
-  # two facts drawn from it, and collapsing them would understate the evidence.
+  # One row per piece of evidence: the gold retrieval set, flattened. `unique`
+  # is deliberately absent — a query citing the same article twice is two facts
+  # drawn from it, and collapsing them would understate the evidence.
+  #
+  # Each row carries both granularities the two measurements need.
+  #
+  # `article` is what this project scores: retrieval is reduced to the articles
+  # its chunks came from, and a query is a hit when a gold *article* is among
+  # them. `fact` is the sentence the benchmark's authors actually pointed at,
+  # and it is what MultiHop-RAG scores — its metrics are over chunks, and a
+  # chunk is relevant when it contains the evidence. Keeping both is what lets
+  # the two be reported side by side instead of one being quoted as the other.
   - id: gold
     source: queries.jsonl
     out: gold.jsonl
@@ -60,6 +69,7 @@ derive:
       question: "{query}"
       question_type: "{question_type}"
       article: "mhr:{value.url|url_key}"
+      fact: "{value.fact}"
     require: [question, article]
 
 load:

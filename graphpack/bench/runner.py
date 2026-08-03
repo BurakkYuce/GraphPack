@@ -40,6 +40,11 @@ class BenchQuery:
     question: str
     gold: frozenset[str]
     kind: str = ""
+    #: The evidence sentences themselves, for chunk-level scoring. The paper's
+    #: metrics are over chunks — a chunk is relevant when it contains a piece of
+    #: evidence — while `gold` above is the article those chunks came from.
+    #: Carrying both is what lets the two measurements be reported side by side.
+    facts: frozenset[str] = frozenset()
 
 
 def load_gold(gold_path: Path, queries_path: Path | None = None) -> list[BenchQuery]:
@@ -54,6 +59,7 @@ def load_gold(gold_path: Path, queries_path: Path | None = None) -> list[BenchQu
         raise BenchError(f"{gold_path}: no gold. Run `graphpack backbone fetch` first.")
 
     by_question: dict[str, set[str]] = {}
+    facts: dict[str, set[str]] = {}
     kinds: dict[str, str] = {}
     for row in _rows(gold_path):
         question = row.get("question")
@@ -61,10 +67,17 @@ def load_gold(gold_path: Path, queries_path: Path | None = None) -> list[BenchQu
         if not question or not article:
             continue
         by_question.setdefault(question, set()).add(article)
+        if fact := str(row.get("fact") or "").strip():
+            facts.setdefault(question, set()).add(fact)
         kinds.setdefault(question, str(row.get("question_type") or ""))
 
     queries = [
-        BenchQuery(question=q, gold=frozenset(a), kind=kinds.get(q, ""))
+        BenchQuery(
+            question=q,
+            gold=frozenset(a),
+            kind=kinds.get(q, ""),
+            facts=frozenset(facts.get(q, ())),
+        )
         for q, a in by_question.items()
     ]
 
@@ -174,6 +187,69 @@ def retrieve(system, question: str, top_k: int, hybrid: bool = False) -> list[st
     retriever = _retriever(system, top_k, hybrid)
     nodes = run(retriever.aretrieve(question))
     return [(node.node.ref_doc_id or "").strip() for node in nodes]
+
+
+def retrieve_chunks(system, question: str, top_k: int, hybrid: bool = False):
+    """Retrieved chunks as ``(document id, text)``, in rank order.
+
+    The article-level scoring above throws the text away, because it only needs
+    to know which article a passage came from. The paper's metrics are over
+    chunks and a chunk counts when it *contains* a piece of evidence, so that
+    comparison needs the text back.
+    """
+    from graphpack.loop import run
+
+    retriever = _retriever(system, top_k, hybrid)
+    nodes = run(retriever.aretrieve(question))
+    return [((n.node.ref_doc_id or "").strip(), n.node.get_content() or "") for n in nodes]
+
+
+def _normalise(text: str) -> str:
+    """Collapse whitespace and case, for containment matching.
+
+    The evidence sentences are quoted from the articles, so they are present
+    verbatim — but chunking, and the metadata prepended to every chunk, leave
+    the whitespace different. Matching on the raw strings loses real hits to
+    a newline.
+    """
+    import re
+
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def score_chunks(system, queries, top_k: int, hybrid: bool = False, ks=(1, 2, 4, 10)):
+    """Score at the granularity MultiHop-RAG uses: chunks, not articles.
+
+    A chunk is relevant when it contains one of the query's evidence sentences.
+    That is the paper's definition and it is a stricter target than ours in two
+    ways at once — the unit is smaller, and the ranked list is not collapsed, so
+    five chunks of one article occupy five positions rather than one.
+
+    Returns the same ``BenchScores`` shape, so the two can be printed together
+    and the difference read off rather than argued about.
+    """
+    results = []
+    for query in queries:
+        if not query.facts:
+            results.append(QueryResult(question=query.question, ranked=(), gold=frozenset()))
+            continue
+        wanted = {_normalise(fact): fact for fact in query.facts}
+        ranked: list[str] = []
+        for _, text in retrieve_chunks(system, query.question, top_k, hybrid=hybrid):
+            haystack = _normalise(text)
+            # A chunk stands for whichever evidence it carries. Naming it by the
+            # fact rather than by a chunk id is what lets the same scoring code
+            # run over both granularities.
+            found = next((f for n, f in wanted.items() if n in haystack), None)
+            ranked.append(found if found else f"__miss__{len(ranked)}")
+        results.append(
+            QueryResult(
+                question=query.question,
+                ranked=tuple(ranked),
+                gold=frozenset(query.facts),
+            )
+        )
+    return score(results, ks=ks)
 
 
 def run_query(

@@ -114,6 +114,7 @@ graphpack backbone fetch PACK       download the pack's structured sources
 graphpack backbone load PACK        merge them into Neo4j (idempotent)
 graphpack backbone check PACK       run the pack's sanity queries
 graphpack ingest PACK [-n N]        run the corpus through the engine
+graphpack ingest PACK --only ID     re-extract one document, seconds not hours
 graphpack inspect [PACK]            report what extraction wrote
 graphpack resolve PACK              link mentions to canonical identifiers
 graphpack validate-triples PACK     check relations against the ontology

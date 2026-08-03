@@ -23,6 +23,7 @@ import os
 from typing import Any
 
 from graphpack.models import (
+    allow_schema_refresh_on_a_populated_graph,
     drive_extraction_synchronously,
     extractor_type_for,
     properties_supported,
@@ -168,6 +169,12 @@ def build_system(pack: Pack, schema: CompiledSchema | None = None):
     # to LlamaIndex's global Settings, so this reaches every consumer of it.
     tune_llm(system.llm, settings.llm_provider)
     enforce_triple_constraints(system, schema, settings.llm_provider)
+    if allow_schema_refresh_on_a_populated_graph():
+        logger.info(
+            "Installed the Neo4j store's missing `query` method — without it a second "
+            "ingest into a pack that already holds data raises AttributeError and writes "
+            "nothing. See allow_schema_refresh_on_a_populated_graph."
+        )
     return system
 
 

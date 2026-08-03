@@ -129,6 +129,42 @@ Measured together, on llama3.1:8b, M4, 16 GB, one 150-character chunk:
 | + context window 8192 | 34 s | 0 entities |
 | + properties disabled | 20 s | 10 entities, 5 relations |
 
+**A second ingest into a pack that already holds data fails, and the first one
+works.** This is a defect in `llama-index-graph-stores-neo4j` rather than in the
+engine, and it is worth knowing because the failure mode hides behind a habit:
+every ingest this project ran was preceded by `pack reset --extraction-only`, so
+it went unseen until per-document re-ingest needed it not to be.
+
+Inserting nodes refreshes the store's schema, and the enhanced-schema path
+samples distinct values for indexed string properties:
+
+```python
+# neo4j_property_graph.py, _enhanced_schema_cypher
+distinct_values = self.query(
+    f"CALL apoc.schema.properties.distinct('{label}', '{prop}') YIELD value"
+)[0]["value"]
+```
+
+`Neo4jPropertyGraphStore` has no `query`. It has `structured_query`, with a
+compatible signature. The branch is reached only when a RANGE index has
+`size > 0` — an index *with data in it* — which is exactly why an empty graph
+survives and a populated one raises `AttributeError` and writes nothing.
+
+`graphpack/models.py` installs the missing method on the class, the same way it
+replaces `SchemaLLMPathExtractor._aextract`.
+→ `allow_schema_refresh_on_a_populated_graph`
+
+**`PropertyGraphIndex.delete_ref_doc` deletes nothing across a process
+boundary.** It works through the index's in-memory docstore, which is built by
+whichever process ingested; a process that opens an existing graph has an empty
+one. The call then returns cleanly and removes no chunks — verified against a
+document with one chunk, whose count was unchanged afterwards.
+
+Same shape as the BM25 leg, and the same cause: the engine keeps in a process
+what the database could hold. `graphpack/reingest.py` deletes chunks with its
+own Cypher on `ref_doc_id`. The vector store's `delete` does work across
+processes and is used as-is.
+
 **Neo4j is Community edition**, which supports exactly one database. Packs share
 `neo4j` and are separated by a `pack` property on every node.
 

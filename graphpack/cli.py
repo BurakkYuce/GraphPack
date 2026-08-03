@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -451,6 +452,13 @@ def ingest_command(
         "--skip-graph",
         help="Chunk, embed and index, but do not extract. Cheap way to check the corpus.",
     ),
+    only: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--only",
+            help="Re-ingest just these document ids. Forgets them first, so it is repeatable.",
+        ),
+    ] = None,
 ) -> None:
     """Run the pack's documents through the engine.
 
@@ -461,6 +469,12 @@ def ingest_command(
     follows whatever the fetch iterated over: the first 200 documents of the oss
     corpus come from 8 repositories out of 114, which is a fine smoke test and a
     misleading measurement.
+
+    `--only` re-extracts named documents without touching the rest, which is
+    what makes changing an ontology or a normaliser cheap: tr-law's full corpus
+    is 55 minutes, and one decision is seconds. The documents are forgotten from
+    every index first — chunks, vectors, and any entity left mentioned by
+    nothing — so running it twice gives the same graph as running it once.
     """
     from graphpack.doctor import run_checks
     from graphpack.ingest import ingest_pack
@@ -479,7 +493,36 @@ def ingest_command(
         err_console.print("\nRun `graphpack doctor` for the full report.")
         raise typer.Exit(code=1)
 
-    report = ingest_pack(loaded, limit=limit, sample=sample, seed=seed, skip_graph=skip_graph)
+    system = None
+    if only:
+        # Built here so the forget and the re-ingest talk to the same engine
+        # instance, and forgotten before anything is written, so re-running the
+        # command is idempotent rather than additive.
+        from graphpack.backbone import session_scope
+        from graphpack.packs.loader import build_system
+        from graphpack.reingest import forget_documents
+
+        system = build_system(loaded)
+        with session_scope() as session:
+            forgotten = forget_documents(session, system, loaded.name, list(only))
+        console.print(
+            f"Forgot {len(only) - len(forgotten.absent)} document(s): "
+            f"{forgotten.chunks_removed:,} chunk(s), "
+            f"{forgotten.entities_collected:,} orphaned entity(ies)",
+            style="dim",
+        )
+        for absent in forgotten.absent:
+            console.print(f"  [yellow]not in the graph yet[/yellow] {absent}", style="dim")
+
+    report = ingest_pack(
+        loaded,
+        limit=limit,
+        sample=sample,
+        seed=seed,
+        skip_graph=skip_graph,
+        system=system,
+        only=list(only) if only else None,
+    )
     console.print(
         f"[green]Ingested {report.documents:,} document(s)[/green] in {report.seconds:.1f}s — "
         f"{report.entities_added:,} extracted entities added "

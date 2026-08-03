@@ -48,6 +48,7 @@ def build_documents(
     limit: int | None = None,
     sample: int | None = None,
     seed: int = 0,
+    only: list[str] | None = None,
 ) -> list:
     """Build the pack's documents.
 
@@ -63,6 +64,10 @@ def build_documents(
     ``sample`` takes N at random, seeded so the same call selects the same
     documents. Extraction is expensive enough that a run is rarely repeated;
     what is measured on one subset should be reproducible on the same subset.
+
+    ``only`` selects documents by identifier, which is what a re-ingest of one
+    changed document needs. Applied before ``limit`` and ``sample``, because
+    naming a document and then sampling away from it would be nonsense.
     """
     from llama_index.core import Document  # engine dependency
 
@@ -74,7 +79,10 @@ def build_documents(
                 f"{spec.describes}: '{spec.source}' is missing — run `graphpack backbone fetch "
                 f"{pack_name}` first"
             )
+        wanted = set(only) if only else None
         for record in _records(pack_name, spec, sources, source_path):
+            if wanted is not None and record["id"] not in wanted:
+                continue
             records.append(record)
             if sample is None and limit is not None and len(records) >= limit:
                 logger.info("Stopping at the requested limit of %d documents", limit)

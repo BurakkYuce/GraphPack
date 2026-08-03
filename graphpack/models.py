@@ -205,3 +205,47 @@ def drive_extraction_synchronously(extractor, provider: str | None) -> bool:
     SchemaLLMPathExtractor._aextract = _aextract
     SchemaLLMPathExtractor._graphpack_sync = True
     return True
+
+
+def allow_schema_refresh_on_a_populated_graph() -> bool:
+    """Give ``Neo4jPropertyGraphStore`` the ``query`` method it calls on itself.
+
+    Returns whether anything was changed, so a caller can log it.
+
+    This is a defect in `llama-index-graph-stores-neo4j`, not in the engine and
+    not here. Inserting nodes into a property graph refreshes the store's schema,
+    and the enhanced-schema path samples distinct values for indexed string
+    properties::
+
+        # neo4j_property_graph.py, _enhanced_schema_cypher
+        distinct_values = self.query(
+            f"CALL apoc.schema.properties.distinct('{label}', '{prop}') YIELD value"
+        )[0]["value"]
+
+    The class has no ``query``. It has ``structured_query``, with a compatible
+    signature.
+
+    What makes it worth a workaround rather than a bug report alone is *when* it
+    fires. The sampling branch needs a RANGE index whose ``size > 0`` — an index
+    with data in it — so an empty graph never reaches it and a populated one
+    always does. In other words: the first ingest into a pack works and the
+    second one fails, with `AttributeError: 'Neo4jPropertyGraphStore' object has
+    no attribute 'query'` and nothing written. Every ingest this project has run
+    was preceded by `pack reset --extraction-only`, which is the only reason it
+    was never seen.
+
+    Installed on the class rather than the instance, for the same reason
+    `drive_extraction_synchronously` is: the store is constructed inside the
+    engine and we never hold it before it is used.
+    """
+    from llama_index.graph_stores.neo4j import Neo4jPropertyGraphStore
+
+    if hasattr(Neo4jPropertyGraphStore, "query"):
+        return False
+
+    def query(self, query: str, param_map: dict | None = None):
+        return self.structured_query(query, param_map)
+
+    Neo4jPropertyGraphStore.query = query
+    Neo4jPropertyGraphStore._graphpack_query_shim = True
+    return True

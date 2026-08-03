@@ -283,3 +283,37 @@ def _documents(tmp_path, hide=None):
         encoding="utf-8",
     )
     return build_documents("testpack", load_sources(tmp_path / "sources.yaml"), data)
+
+
+# ----------------------------------------------------------------------
+# Selecting documents by identifier
+# ----------------------------------------------------------------------
+
+
+def test_only_selects_documents_by_id(corpus):
+    """What a re-ingest of one changed document needs. The identifier is the
+    corpus `id` template's output, which is also what a chunk carries as
+    `ref_doc_id` — the same string the graph is joined on."""
+    sources, data = corpus()
+
+    documents = build_documents("p", sources, data, only=["th:psf/requests#1"])
+
+    assert [d.doc_id for d in documents] == ["th:psf/requests#1"]
+
+
+def test_only_ignores_ids_the_corpus_does_not_have(corpus):
+    """Reported by the caller rather than raised here: `ingest_pack` turns an
+    empty selection into an error naming where identifiers come from, which is
+    more use than a KeyError on a typo."""
+    sources, data = corpus()
+
+    assert build_documents("p", sources, data, only=["th:nope#9"]) == []
+
+
+def test_only_is_applied_before_sampling(corpus):
+    """Naming a document and then sampling away from it would be nonsense."""
+    sources, data = corpus()
+
+    documents = build_documents("p", sources, data, only=["th:psf/requests#1"], sample=1, seed=0)
+
+    assert [d.doc_id for d in documents] == ["th:psf/requests#1"]

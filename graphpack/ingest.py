@@ -46,6 +46,7 @@ def ingest_pack(
     seed: int = 0,
     skip_graph: bool = False,
     system=None,
+    only: list[str] | None = None,
 ) -> IngestReport:
     """Ingest *pack*'s corpus.
 
@@ -68,9 +69,15 @@ def ingest_pack(
         raise IngestError(f"{pack.name} declares no corpus steps")
 
     documents = build_documents(
-        pack.name, sources, pack.data_dir, limit=limit, sample=sample, seed=seed
+        pack.name, sources, pack.data_dir, limit=limit, sample=sample, seed=seed, only=only
     )
     if not documents:
+        if only:
+            raise IngestError(
+                f"{pack.name}: none of the requested document(s) are in the corpus — "
+                f"{', '.join(only[:3])}. Identifiers come from the pack's corpus `id` "
+                f"template, which is also what `ref_doc_id` holds on a chunk."
+            )
         raise IngestError(
             f"{pack.name}: no documents — run `graphpack backbone fetch {pack.name}` first"
         )

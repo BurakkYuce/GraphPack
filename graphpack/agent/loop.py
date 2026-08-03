@@ -96,7 +96,7 @@ def answer_question(
     if system is not None:
         _retrieve(recorder, system, question, gathered)
 
-    _answer(recorder, question, gathered, llm)
+    _answer(recorder, question, gathered, llm, intent)
     _critique(recorder, session, pack, gathered)
     return recorder.trace
 
@@ -192,13 +192,15 @@ def _retrieve(recorder: Recorder, system, question: str, gathered: Gathered) -> 
         event.detail = {"documents": [p.document for p in gathered.passages][:5]}
 
 
-def _answer(recorder: Recorder, question: str, gathered: Gathered, llm) -> None:
+def _answer(
+    recorder: Recorder, question: str, gathered: Gathered, llm, intent: Intent | None = None
+) -> None:
     """Write the reply from what was gathered — and only from that."""
     with recorder.step("answer", tool="llm" if llm else "structured") as event:
         if llm is None:
             recorder.trace.answer = _structured_answer(gathered)
         else:
-            recorder.trace.answer = _model_answer(llm, question, gathered)
+            recorder.trace.answer = _model_answer(llm, question, gathered, intent)
         recorder.trace.cited_ids = gathered.all_ids
         event.node_ids = gathered.all_ids
         event.summary = f"answered from {len(gathered.all_ids)} entity(ies)"
@@ -279,8 +281,18 @@ def _structured_answer(gathered: Gathered) -> str:
     return f"From {subject}: {len(names)} result(s) — {listed}{more}."
 
 
-def _model_answer(llm, question: str, gathered: Gathered) -> str:
-    """Ask the model to write the reply, from the gathered material only."""
+def _model_answer(llm, question: str, gathered: Gathered, intent: Intent | None = None) -> str:
+    """Ask the model to write the reply, from the gathered material only.
+
+    The traversal result is labelled with what produced it, and that is not
+    cosmetic. Given a bare list under "reached by traversing the graph", models
+    read the passages as "the provided text" and answer that the question cannot
+    be answered — observed on "what would break if urllib3 broke" with sixty
+    correct entities sitting in the prompt. The list *is* the answer to a
+    graph-shaped question; no passage says it, which is the entire reason the
+    traversal ran. So the prompt says which relation was followed and that the
+    result is a fact from the graph rather than context around it.
+    """
     lines = [f"Question: {question}", ""]
     if gathered.entities:
         lines.append(
@@ -288,17 +300,24 @@ def _model_answer(llm, question: str, gathered: Gathered) -> str:
             + ", ".join(f"{e.name} ({e.id})" for e in gathered.entities[:10])
         )
     if gathered.neighbours:
+        what = f" ({intent.description.rstrip('.')})" if intent and intent.description else ""
         lines.append(
-            "Reached by traversing the graph: "
-            + ", ".join(f"{n.name} ({n.id})" for n in gathered.neighbours[:40])
+            f"Result of following '{intent.name if intent else 'the graph'}'{what} in the "
+            "knowledge graph. These are established facts, not passages to interpret, and "
+            "no document is expected to state them:"
         )
+        lines.append(", ".join(f"{n.name} ({n.id})" for n in gathered.neighbours[:40]))
+        if len(gathered.neighbours) > 40:
+            lines.append(f"...and {len(gathered.neighbours) - 40} more.")
     for passage in gathered.passages[:4]:
         lines.append(f"Passage: {passage.text[:600]}")
 
     lines += [
         "",
         "Answer the question using only what is above. Name the entities you rely on.",
-        "If what is above does not answer it, say so rather than filling the gap.",
+        "The graph result above answers structural questions on its own — do not say the "
+        "question cannot be answered merely because no passage repeats it.",
+        "If what is above genuinely does not answer it, say so rather than filling the gap.",
     ]
     try:
         return str(llm.complete("\n".join(lines))).strip()

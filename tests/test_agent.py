@@ -255,3 +255,73 @@ def test_every_question_routes_to_the_intent_it_claims(pack_name):
             )
 
     assert not wrong, "\n".join(wrong)
+
+
+# ----------------------------------------------------------------------
+# What the model is shown
+# ----------------------------------------------------------------------
+
+
+class _Recorder:
+    """Captures the prompt instead of answering."""
+
+    def __init__(self):
+        self.prompt = ""
+
+    def complete(self, prompt):
+        self.prompt = prompt
+        return "answer"
+
+
+def _gathered_with_neighbours():
+    from graphpack.agent.loop import Gathered
+    from graphpack.agent.tools import Found
+
+    return Gathered(
+        entities=[Found(id="pypi:urllib3", name="urllib3", label="Package", via="lookup")],
+        neighbours=[Found(id="pypi:meltano", name="meltano", label="Package", via="depends")],
+    )
+
+
+def test_the_traversal_result_is_labelled_as_graph_fact_not_as_a_passage():
+    """The bug this pins produced a wrong answer with the right data in the
+    prompt. Asked "what would break if urllib3 broke" with sixty correct
+    packages listed under a bare "reached by traversing the graph", the model
+    replied that the provided text does not contain the answer — it read the
+    passages as the evidence and the traversal as decoration.
+
+    No passage says what would break; assembling that is the entire reason the
+    traversal ran. So the prompt has to say the list is a fact from the graph
+    and that no document is expected to repeat it."""
+    from graphpack.agent.contract import Intent
+    from graphpack.agent.loop import _model_answer
+
+    llm = _Recorder()
+    intent = Intent(
+        name="blast_radius",
+        description="What breaks if this package breaks.",
+        entity="PACKAGE",
+        cypher="MATCH (n {pack: $pack}) RETURN n.id AS id",
+    )
+
+    _model_answer(llm, "What would break if urllib3 broke?", _gathered_with_neighbours(), intent)
+
+    assert "blast_radius" in llm.prompt
+    assert "What breaks if this package breaks" in llm.prompt
+    assert "established facts" in llm.prompt
+    assert "no document is expected to state them" in llm.prompt
+    assert "do not say the question cannot be answered" in llm.prompt
+    assert "pypi:meltano" in llm.prompt
+
+
+def test_the_prompt_still_works_without_a_routed_intent():
+    """Lookup can find entities when no intent matched, and the reply must still
+    be written rather than crashing on the missing label."""
+    from graphpack.agent.loop import _model_answer
+
+    llm = _Recorder()
+
+    _model_answer(llm, "anything?", _gathered_with_neighbours(), None)
+
+    assert "the graph" in llm.prompt
+    assert "pypi:meltano" in llm.prompt

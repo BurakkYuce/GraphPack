@@ -83,6 +83,13 @@ corpus instead of a tenth of it, the ontology was enforced during extraction
 instead of ignored, and the extractor was one the provider can actually drive.
 Each is in [RESULTS.md](RESULTS.md) with the measurement that showed it.
 
+**And the graph answers what retrieval does not.** On bench-wiki, where every
+article is indexed, 26.8% of a traversal's answer is recoverable from the top-30
+passages — 75% when the answer is eight entities, 12% when it is fifty-one. The
+byline questions recover nothing at all, because `author` is in the backbone and
+in no passage. That is the case for a structured half, stated as a number rather
+than asserted.
+
 Having both in one repository is what makes either legible. Same metrics code,
 same interval arithmetic, 2,255 measurements against 20: ±2 points against ±13.
 Nothing about the system got more certain between those two rows.
@@ -184,12 +191,13 @@ allow.
   extraction discarded. Resolving it needs context-dependent resolution, which
   does not exist yet.
 - **The benchmark is vector-only**, and unreranked.
-- **No ablation.** Nothing here measures what the *graph* adds over retrieval
-  alone. The agent's traversals answer questions a retriever cannot — "which
-  outlets covered this" is a join, not a passage — but "cannot" is asserted, not
-  measured. This is the largest missing experiment and the cheapest to run: the
-  bench harness already scores retrieval, and a graph-augmented condition would
-  reuse it whole.
+- **The ablation covers one pack.** `graphpack ablate bench-wiki` measures how
+  much of a graph answer is recoverable from text alone — 26.8% at top-30, and
+  falling as the answer set grows (75% at eight entities, 12% at fifty-one).
+  The same command on tr-law is confounded by its corpus being a 200-document
+  sample of a 1,578-decision graph, so that number is reported and not used.
+  What none of it measures is whether an end-to-end system *answers* the
+  question; name presence is a lower bound, not an answer.
 - **One machine, one model.** M4, 16 GB, llama3.1:8b. Every timing and much of
   the extraction quality is a fact about that, not about the design.
 

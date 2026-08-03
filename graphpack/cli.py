@@ -1026,6 +1026,67 @@ def bench_command(
         )
 
 
+@app.command("ablate")
+def ablate_command(
+    pack: str = typer.Argument(..., help="Pack to ablate."),
+    top_k: int = typer.Option(30, "--top-k", help="How deep to retrieve per question."),
+) -> None:
+    """Measure how much of a graph answer is recoverable from text alone.
+
+    The project claims some questions are joins rather than passages. This puts
+    a number on it: the traversal's answer defines the question, and the score
+    is the share of that answer named anywhere in the top-k retrieved passages.
+    """
+    from graphpack.ablate import run_ablation
+    from graphpack.agent import load_retrieval_rules
+    from graphpack.agent.runner import load_questions
+    from graphpack.backbone import session_scope
+    from graphpack.packs.loader import build_system
+
+    loaded = load_pack(pack)
+    rules = load_retrieval_rules(loaded.path("retrieval.yaml"))
+    questions = load_questions(loaded.path("questions.jsonl"))
+    system = build_system(loaded)
+
+    with session_scope() as session:
+        resolver = _resolver_for(session, loaded)
+        report = run_ablation(
+            session, system, loaded.name, questions, rules, top_k=top_k, resolver=resolver
+        )
+
+    table = Table("question", "intent", "answer", "recovered", "share")
+    for result in report.results:
+        table.add_row(
+            result.question_id,
+            result.intent,
+            str(len(result.answer)),
+            str(len(result.recovered)),
+            f"{result.recall:.0%}" if result.answer else "—",
+        )
+    console.print(table)
+
+    scored = report.scored
+    if not scored:
+        console.print("[yellow]No question produced a graph answer to look for.[/yellow]")
+        raise typer.Exit(code=1)
+
+    sizes = report.answer_sizes
+    console.print(
+        f"\n{len(scored)} question(s) scored, mean recovery "
+        f"[bold]{report.mean_recall:.1%}[/bold] at top-{top_k}; "
+        f"answer sets {min(sizes)}–{max(sizes)} entities"
+    )
+    if report.unanswered:
+        console.print(
+            f"[dim]{len(report.unanswered)} excluded — the traversal returned nothing: "
+            f"{', '.join(report.unanswered)}[/dim]"
+        )
+    console.print(
+        "[dim]Name presence is a lower bound: being in the retrieved text is "
+        "necessary for a reader to assemble the answer, not sufficient.[/dim]"
+    )
+
+
 def main() -> None:
     """Turn the expected failures into one-line messages.
 

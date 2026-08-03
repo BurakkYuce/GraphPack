@@ -92,6 +92,8 @@ graphpack inspect [PACK]            report what extraction wrote
 graphpack resolve PACK              link mentions to canonical identifiers
 graphpack validate-triples PACK     check relations against the ontology
 graphpack ask PACK QUESTION         answer by walking the graph
+graphpack ablate PACK               how much of a graph answer is in the text
+graphpack bench PACK                Hit@k / MRR@10 against published gold
 graphpack ask-all PACK              run the pack's whole question set
 graphpack viz PACK --id ID          write the run as a self-contained page
 graphpack doctor                    check models and services are reachable

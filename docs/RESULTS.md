@@ -304,6 +304,60 @@ time. Chunking and embedding are not what makes a GraphRAG ingest expensive on
 local hardware; the model reading every chunk is. That is the number to put
 beside `extract: false` when deciding whether a pack needs it.
 
+## Does the graph answer what retrieval cannot?
+
+```bash
+uv run graphpack ablate bench-wiki
+```
+
+The project had claimed, in prose, that some questions are joins rather than
+passages. This is that claim as a number. The traversal's answer *defines* the
+question — scoring the graph against its own output would be circular — and the
+only thing measured is how much of that answer a reader could recover from the
+retrieved text alone.
+
+**bench-wiki, top-30, all 609 articles indexed:**
+
+| question | answer set | recovered | share |
+|---|---:|---:|---:|
+| articles from CNBC | 8 | 6 | 75% |
+| outlets covering technology | 9 | 5 | 56% |
+| outlets covering tech (abbrev) | 9 | 4 | 44% |
+| outlets covering sports | 18 | 3 | 17% |
+| articles from TechCrunch | 51 | 6 | 12% |
+| articles from The Verge | 46 | 5 | 11% |
+| articles by Natasha Lomas | 15 | 0 | 0% |
+| articles by Sarah Perez | 13 | 0 | 0% |
+| **mean** | | | **26.8%** |
+
+Two patterns, and neither is "retrieval is bad".
+
+**Recovery falls as the answer set grows.** Eight answers: 75%. Fifty-one: 12%.
+Nothing about the retriever changed between those rows — what changed is
+whether the answer fits in thirty passages. That is the difference between a
+question with an answer and a question with a *join* for an answer, and it is
+the whole claim.
+
+**The byline questions score zero, for a reason worth stating.** `author` is not
+in the metadata this pack declares, so it is in no passage at all. The graph has
+it because the backbone was loaded from the article records. This is not
+retrieval failing at a hard question; it is information that exists in the
+structured half and nowhere in the text — the plainest version of the case for
+having a backbone.
+
+Retrieval was measured **as a reader sees it** — `MetadataMode.LLM`, so the
+title and outlet prepended to every chunk count as present. Scoring the bare
+body instead gave 11.4%, and would have flattered the graph by more than a
+factor of two. That is the one direction this measurement must not be wrong in.
+
+### tr-law's ablation is confounded — reported, not used
+
+The same command on tr-law returns 5.9%, and the number should not be quoted.
+Its graph holds all 1,578 decisions while only 200 were ingested, so most of
+each answer is not in the vector store to be found. That gap is sampling, not
+structure. bench-wiki has no such confound: every one of its 609 articles is
+indexed, which is why it is the measurement above.
+
 ## What has not been measured
 
 - **Article-level citations.** No gold survives resolution; see above.

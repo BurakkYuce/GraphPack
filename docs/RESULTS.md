@@ -519,8 +519,9 @@ of ±13. Nothing about the system got more certain — the measurement did.
 - **Vector retrieval only.** The engine's BM25 leg is an in-memory docstore
   belonging to the process that ingested, so a benchmark run as a separate
   command has no full-text half. `LI BM25: get_retriever() returned None` is the
-  engine saying so. A true hybrid number needs ingest and benchmark in one
-  process, which is a run this has not done.
+  engine saying so. `graphpack bench bench-wiki --ingest --hybrid` now does both
+  in one process and scores the fusion retriever, so the number the table above
+  lacks is a command rather than a design change.
 - `nomic-embed-text`, chunk size 1024, overlap 128, top-30 retrieved.
 - **Chunks are reduced to articles.** Several chunks of one article are one
   result, taking the rank of its best chunk. Counting chunks would make Hit@10 a

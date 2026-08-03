@@ -22,10 +22,15 @@ services:
       - NEO4J_PLUGINS=["apoc"]
       - NEO4J_apoc_export_file_enabled=true
       - NEO4J_apoc_import_file_enabled=true
-      # Backbone loading writes in large UNWIND batches.
-      - NEO4J_server_memory_heap_initial__size=1G
-      - NEO4J_server_memory_heap_max__size=2G
-      - NEO4J_server_memory_pagecache_size=1G
+      # Backbone loading writes in large UNWIND batches, which is what these
+      # were sized for. Measured since: the whole store is 158 MB across four
+      # packs, and the batch loader got a shared-label index in phase E1 that
+      # took the largest load (25,367 edges) from 30 minutes to 5 seconds — so
+      # the batches no longer sit in memory long enough to need 3 GB of ceiling.
+      # 1.5 GB total, with a page cache still 3x the database.
+      - NEO4J_server_memory_heap_initial__size=512M
+      - NEO4J_server_memory_heap_max__size=1G
+      - NEO4J_server_memory_pagecache_size=512M
     ports:
       - "7474:7474"   # HTTP / Browser
       - "7687:7687"   # Bolt

@@ -75,10 +75,17 @@ def graph(neo4j_session):
             {"id": "pypi:typing-extensions", "name": "typing-extensions"},
         ],
     )
+    # The id is prefixed with the test pack and the mention text is carried on
+    # `name`, which is where the pipeline reads it from. `__Entity__.id` is
+    # unique across the whole database rather than per pack — Neo4j Community
+    # has one database and packs are separated by a property — so a fixture
+    # writing the bare text collides with any real ingest that extracted the
+    # same name. It passed in CI, where the database is empty, and failed on a
+    # machine that had actually run one.
     neo4j_session.run(
         """
         UNWIND $mentions AS row
-        CREATE (e:`__Entity__`:PACKAGE {pack: $pack, id: row.text, name: row.text})
+        CREATE (e:`__Entity__`:PACKAGE {pack: $pack, id: $pack + ':' + row.text, name: row.text})
         """,
         pack=PACK,
         mentions=[{"text": text} for text, _ in MENTIONS],
@@ -197,7 +204,8 @@ def test_mentions_of_a_type_no_rule_covers_are_left_alone(graph, rules):
     """Not every extracted type has a canonical form. Counting those as drops
     would make the resolution rate depend on how much the ontology covers."""
     graph.run(
-        "CREATE (e:`__Entity__`:CONCEPT {pack: $p, id: 'backpressure', name: 'backpressure'})",
+        "CREATE (e:`__Entity__`:CONCEPT "
+        "{pack: $p, id: $p + ':backpressure', name: 'backpressure'})",
         p=PACK,
     )
 

@@ -109,7 +109,15 @@ def load_retrieval_rules(path: Path) -> RetrievalRules:
     if duplicates:
         raise RetrievalError(f"{path}: duplicate intent name(s) {sorted(duplicates)}")
 
-    return RetrievalRules(intents=intents, lookup=str(raw.get("lookup") or "").strip())
+    # The lookup runs on every question before any intent does, and it was the
+    # one query in this file nothing checked. A lookup missing `$pack` reads
+    # whichever pack happens to share the identifier — the same hazard the intent
+    # check exists for, on the query that runs most often.
+    lookup = str(raw.get("lookup") or "").strip()
+    if lookup:
+        _check_cypher(lookup, f"{path}: lookup")
+
+    return RetrievalRules(intents=intents, lookup=lookup)
 
 
 def _parse_intent(item: Any, path: Path, index: int) -> Intent:

@@ -208,6 +208,77 @@ def test_a_corpus_template_with_a_placeholder_passes(domains):
     assert not [e for e in result.errors if "placeholder" in e]
 
 
+def test_corpus_templates_do_not_short_circuit_the_backbone_checks(domains):
+    """A regression, and the reason this test is specific rather than general.
+
+    The corpus template check was inserted between `if not sources.load:` and its
+    `return`, which put the `return` inside the new `for spec in sources.corpus:`
+    loop. Every pack declaring a corpus then skipped everything below it — the
+    backbone summary and the edge-prefix warning — after one iteration. Nothing
+    failed; the output was simply shorter, and stayed that way for a day.
+
+    So this asserts on what disappeared: the second corpus spec is still checked,
+    and the checks that live below the loop still run.
+    """
+    domains(
+        "widgets",
+        sources=textwrap.dedent(
+            """\
+            fetch:
+              - id: a
+                url: https://example.invalid/a.json
+                out: a.jsonl
+            load:
+              - source: a.jsonl
+                node: {label: Widget, id: "w:{n}"}
+              - source: a.jsonl
+                edge: {type: BUILT_IN, from: "w:{n}", to: "typo:{m}"}
+            corpus:
+              - source: a.jsonl
+                id: "d:{n}"
+                text: "{body}"
+              - source: a.jsonl
+                id: "e:{n}"
+                text: body
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    # The second corpus spec is reached at all.
+    assert any("no placeholder" in e and "{body}" in e for e in result.errors)
+    # And the checks below the loop still run.
+    assert "backbone: 1 fetch, 2 load" in result.summary
+    assert any("but no node step produces that prefix" in w for w in result.warnings)
+
+
+def test_a_pack_with_a_corpus_and_no_load_steps_still_has_its_templates_checked(domains):
+    """The no-load-steps return is legitimate — there is no backbone to describe.
+    It must not take the corpus check down with it: documents and nodes are
+    independent, and a pack may declare only the former."""
+    domains(
+        "widgets",
+        sources=textwrap.dedent(
+            """\
+            fetch:
+              - id: a
+                url: https://example.invalid/a.json
+                out: a.jsonl
+            corpus:
+              - source: a.jsonl
+                id: "d:{n}"
+                text: body
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert any("no placeholder" in e for e in result.errors)
+    assert any("no load steps" in w for w in result.warnings)
+
+
 def test_an_eval_task_asking_for_a_shape_the_backbone_cannot_build_is_rejected(domains):
     """backbone_edges scores pairs of same-labelled nodes. tr-law's decisions
     cite statutes, so the backbone holds Decision->Statute and no
@@ -286,6 +357,175 @@ def test_the_document_shaped_generator_passes_the_same_check(domains):
     result = validate_pack("widgets")
 
     assert not [e for e in result.errors if "eval task" in e]
+
+
+def test_a_malformed_eval_file_is_an_error_not_silence(domains):
+    """These used to be swallowed. `_check_eval_shape` caught EvalError and
+    returned, with a comment saying the check that owns eval.yaml would report it
+    — and no check owned eval.yaml. An unknown generator passed validation and
+    failed with a KeyError after scoring."""
+    domains(
+        "widgets",
+        evaluation=textwrap.dedent(
+            """\
+            tasks:
+              - name: t
+                generator: invented_edges
+                relation: BUILT_IN
+                endpoint_label: Widget
+            holdout: 0.0
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("unknown generator 'invented_edges'" in e for e in result.errors)
+
+
+def test_a_document_edges_task_without_a_source_label_is_rejected(domains):
+    """It used to default to the label "Document", which no pack writes: gold came
+    back empty and the run said "0 gold edges" — the same output a corpus with
+    genuinely no gold produces, after however long extraction took."""
+    domains(
+        "widgets",
+        evaluation=textwrap.dedent(
+            """\
+            tasks:
+              - name: t
+                generator: document_edges
+                relation: BUILT_IN
+                endpoint_label: Widget
+            holdout: 0.0
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("needs 'source_label'" in e for e in result.errors)
+
+
+def test_an_out_of_range_holdout_is_an_error(domains):
+    domains(
+        "widgets",
+        evaluation=textwrap.dedent(
+            """\
+            tasks:
+              - name: t
+                generator: backbone_edges
+                relation: BUILT_IN
+                endpoint_label: Widget
+            holdout: 1.5
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("holdout must be in [0, 1)" in e for e in result.errors)
+
+
+def test_a_retrieval_intent_missing_its_cypher_is_an_error(domains):
+    """retrieval.yaml was parsed by nothing until a question was asked, so every
+    check in agent/contract.py existed and none of them ran at validation time."""
+    domains(
+        "widgets",
+        retrieval=textwrap.dedent(
+            """\
+            intents:
+              - name: built_in
+                description: Which factory built this widget.
+                entity: WIDGET
+                match: ["built"]
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("missing 'cypher'" in e for e in result.errors)
+
+
+def test_a_traversal_that_does_not_filter_on_pack_is_an_error(domains):
+    """The quiet one. Neo4j Community has a single database, so packs share it and
+    are separated by a `pack` property. A traversal that omits it answers out of
+    whichever pack happens to hold a matching id — a plausible answer from the
+    wrong graph."""
+    domains(
+        "widgets",
+        retrieval=textwrap.dedent(
+            """\
+            intents:
+              - name: built_in
+                description: Which factory built this widget.
+                entity: WIDGET
+                cypher: |
+                  MATCH (w:Widget)-[:BUILT_IN]->(f) WHERE w.id = $entity_id
+                  RETURN f.id AS id LIMIT {limit}
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("does not filter on $pack" in e for e in result.errors)
+
+
+def test_a_lookup_that_does_not_filter_on_pack_is_an_error(domains):
+    """The lookup runs before any intent does, on every question, and was the one
+    query in retrieval.yaml that nothing checked."""
+    domains(
+        "widgets",
+        retrieval=textwrap.dedent(
+            """\
+            lookup: |
+              MATCH (n) WHERE n.id = $needle RETURN n.id AS id LIMIT $limit
+
+            intents:
+              - name: built_in
+                description: Which factory built this widget.
+                entity: WIDGET
+                cypher: |
+                  MATCH (w:Widget {pack: $pack})-[:BUILT_IN]->(f {pack: $pack})
+                  WHERE w.id = $entity_id
+                  RETURN f.id AS id LIMIT {limit}
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("lookup" in e and "does not filter on $pack" in e for e in result.errors)
+
+
+def test_an_intent_about_a_type_the_ontology_does_not_declare_is_an_error(domains):
+    domains(
+        "widgets",
+        retrieval=textwrap.dedent(
+            """\
+            intents:
+              - name: built_in
+                description: Which factory built this widget.
+                entity: GHOST
+                cypher: |
+                  MATCH (w:Widget {pack: $pack})-[:BUILT_IN]->(f {pack: $pack})
+                  WHERE w.id = $entity_id
+                  RETURN f.id AS id LIMIT {limit}
+            """
+        ),
+    )
+
+    result = validate_pack("widgets")
+
+    assert not result.ok
+    assert any("intent 'built_in' is about 'GHOST'" in e for e in result.errors)
 
 
 def test_an_eval_task_scoring_a_relation_nothing_builds_is_a_note(domains):

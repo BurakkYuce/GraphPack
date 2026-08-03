@@ -165,12 +165,12 @@ def document_edges(session, pack: str, task) -> tuple[set, set, dict]:
     decision the fetch produced; charging extraction for the 1,378 that were
     never put through it would be measuring the sample size.
     """
-    source_label = task.source_label or "Document"
-
     backbone: dict[str, set[str]] = {}
     for row in session.run(
         _DOCUMENT_BACKBONE.format(
-            source_label=source_label, relation=task.backbone_relation, label=task.endpoint_label
+            source_label=task.source_label,
+            relation=task.backbone_relation,
+            label=task.endpoint_label,
         ),
         pack=pack,
     ):

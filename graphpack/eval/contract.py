@@ -111,6 +111,17 @@ def _parse_task(item: Any, path: Path, index: int) -> Task:
     if generator not in known:
         raise EvalError(f"{where}: unknown generator '{generator}'; available: {', '.join(known)}")
 
+    # `document_edges` matches documents by label. Without one it used to fall
+    # back to "Document", which no pack writes: the gold set came back empty and
+    # the run reported "0 gold edges" rather than an error — indistinguishable
+    # from a corpus that genuinely has none, after however long extraction took.
+    if generator == "document_edges" and not item.get("source_label"):
+        raise EvalError(
+            f"{where}: document_edges needs 'source_label' — the label its documents "
+            "carry in the backbone. Without it there is nothing to match and the gold "
+            "set comes back empty rather than wrong."
+        )
+
     relation = str(item["relation"])
     return Task(
         name=str(item["name"]),

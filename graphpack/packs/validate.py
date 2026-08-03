@@ -54,6 +54,7 @@ def validate_pack(name: str) -> ValidationResult:
     _check_sources(pack, result)
     _check_eval_shape(pack, result)
     _check_resolve(pack, result)
+    _check_retrieval(pack, result)
     return result
 
 
@@ -149,11 +150,21 @@ def _check_eval_shape(pack: Pack, result: ValidationResult) -> None:
     sources_path = pack.path("sources.yaml")
     if not eval_path.is_file() or not sources_path.is_file():
         return
+    # These two are caught differently on purpose. `_check_sources` owns
+    # sources.yaml and will report a SourcesError itself, so repeating it here
+    # would double every message. Nothing owns eval.yaml — an earlier version of
+    # this function caught both and returned, with a comment claiming otherwise,
+    # so an unknown generator, an empty task list, a duplicate task name and an
+    # out-of-range holdout all passed validation in silence.
     try:
         rules = load_eval_rules(eval_path)
+    except EvalError as exc:
+        result.errors.append(str(exc))
+        return
+    try:
         sources = load_sources(sources_path)
-    except (EvalError, SourcesError):
-        return  # reported by the checks that own those files
+    except SourcesError:
+        return  # reported by _check_sources, which owns that file
 
     # Which (from-label, type, to-label) triples the backbone can actually build.
     edges = {
@@ -205,14 +216,17 @@ def _check_sources(pack: Pack, result: ValidationResult) -> None:
         result.errors.append(str(exc))
         return
 
-    if not sources.load:
-        result.warnings.append("sources.yaml declares no load steps")
-
     # A template with no placeholder renders itself. `text: body` looks like it
     # names a field and produces the four-character string "body" for every
     # document — an ingest embeds that without complaint, and the corpus is
     # gone. Caught here because the next place it shows up is a benchmark
     # scoring zero.
+    #
+    # Ahead of the no-load-steps return below, because a corpus is independent of
+    # the backbone: a pack can declare documents and no nodes. An earlier version
+    # of this function put the loop after that `return` and captured it into the
+    # loop body, which silenced every check below for every pack that has a
+    # corpus — see test_corpus_templates_do_not_short_circuit_the_backbone_checks.
     for spec in sources.corpus:
         for field_name, template in (("text", spec.text), ("id", spec.id)):
             if template and "{" not in template:
@@ -221,6 +235,9 @@ def _check_sources(pack: Pack, result: ValidationResult) -> None:
                     f"placeholder and renders as that literal string. Did you mean "
                     f"'{{{template}}}'?"
                 )
+
+    if not sources.load:
+        result.warnings.append("sources.yaml declares no load steps")
         return
 
     labels = sources.node_labels
@@ -300,6 +317,52 @@ def _check_resolve(pack: Pack, result: ValidationResult) -> None:
     result.summary = (
         f"{result.summary}; resolve: {len(rules.rules)} rule(s), {len(rules.aliases)} alias(es)"
     )
+
+
+def _check_retrieval(pack: Pack, result: ValidationResult) -> None:
+    """Parse retrieval.yaml, which until now only had to be valid YAML.
+
+    Every check below already existed in `graphpack/agent/contract.py`; nothing
+    called them until a question was asked. So a pack could pass validation with
+    an intent missing its Cypher, a duplicate intent name, or — worst, because it
+    is silent rather than loud — a traversal that does not filter on `$pack` and
+    answers out of a different pack's graph. `graphpack packs validate` is where
+    a pack author looks; this puts the answers there.
+    """
+    from graphpack.agent.contract import RetrievalError, load_retrieval_rules
+
+    path = pack.path("retrieval.yaml")
+    if not path.is_file():
+        return  # reported by _check_required_files when the phase demands it
+
+    try:
+        rules = load_retrieval_rules(path)
+    except RetrievalError as exc:
+        result.errors.append(str(exc))
+        return
+
+    if not rules.lookup:
+        result.warnings.append(
+            "retrieval.yaml declares no lookup — the agent can only reach entities "
+            "resolution already links, so a question naming an id outright finds nothing"
+        )
+
+    # An intent's `entity` is the extraction label its questions are about. The
+    # agent does not read it today (lookup goes through the pack's Cypher and
+    # resolve rules), but the parser requires it of every pack, so it is at least
+    # held to naming something real rather than being required and unchecked.
+    try:
+        declared = set(compile_ontology(pack.ontology_path).entities)
+    except OntologyError:
+        declared = set()  # already reported
+    for intent in rules.intents:
+        if declared and intent.entity not in declared:
+            result.errors.append(
+                f"retrieval.yaml: intent '{intent.name}' is about '{intent.entity}', which the "
+                f"ontology does not declare (it has {', '.join(sorted(declared))})"
+            )
+
+    result.summary = f"{result.summary}; retrieval: {len(rules.intents)} intent(s)"
 
 
 def _backbone_labels(pack: Pack) -> set[str]:

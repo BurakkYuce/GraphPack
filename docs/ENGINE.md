@@ -183,6 +183,28 @@ while `MetadataMode.LLM` renders it. GraphPack excludes the pack tag from both
 the LLM and embedding views, and `hide_from_model` lets a pack exclude more.
 → `tests/test_corpus.py`
 
+Measured on the oss corpus: with `url` visible, **31.4% of extracted entities
+were named by a URL** — 154 of 490 — and every one carried a type the ontology
+declares (`ISSUE`, `PACKAGE`, `REPOSITORY`), so `validate-triples` reported 100%
+conformance throughout. Conformance checking cannot see this class of error.
+Hiding the field took it to 0.7%, and the structure it had crowded out came
+through: repository edges 10 → 85. See [RESULTS.md](RESULTS.md).
+
+**Metadata is also subtracted from the chunk-size budget**, which is a second
+reason to hide what is not content:
+
+```python
+# llama_index.core.node_parser SentenceSplitter.split_text_metadata_aware
+metadata_len = len(self._tokenizer(metadata_str))
+effective_chunk_size = self.chunk_size - metadata_len
+```
+
+So every metadata key shortens the text each chunk can hold. Hiding three fields
+from the oss corpus took it from 604 chunks to 518 — 14% fewer, which is 14%
+fewer model calls for the same documents. It also means a pack with verbose
+metadata and a small `chunk_size` can raise `ValueError` outright, which the
+splitter does deliberately rather than producing empty chunks.
+
 **The graph half of an ingest is all-or-nothing; the vector half is not.** The
 two land at different times, and it matters because only one of them survives an
 interruption.

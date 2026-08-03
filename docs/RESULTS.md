@@ -407,6 +407,69 @@ statute_citations (document_edges: CITES)
   tp 105, fp 3, fn 45 — 150 gold edges, 88 of 88 documents carried gold
 ```
 
+### The same measurement at eight times the scale
+
+The sample above is 200 of 1,578 decisions. Running all of them is the test of
+whether that sample was measuring anything:
+
+```bash
+uv run graphpack pack reset tr-law --extraction-only --yes
+uv run graphpack ingest tr-law          # no --sample: all 1,578
+uv run graphpack resolve tr-law && uv run graphpack eval tr-law
+```
+
+| | 200 documents | **1,578 documents** |
+|---|---|---|
+| chunks | 611 | 4,689 |
+| extracted entities | — | 5,130 |
+| conforming relations | 100% | **100%** (8,605 of 8,605) |
+| documents carrying gold | 88 of 88 | **711 of 711** |
+| precision | 97.2% [92.1–99.1] | **97.0%** [95.6–97.9] |
+| recall | 70.0% [62.2–76.8] | **69.2%** [66.6–71.7] |
+| interval, precision | ±3.5 points | **±1.2** |
+| interval, recall | ±7.3 points | **±2.6** |
+
+**The scores held to within a point at eight times the data.** Precision 97.2 →
+97.0, recall 70.0 → 69.2, both well inside the old intervals. That is the
+strongest reproducibility evidence in this document, and it is worth putting
+beside oss's `dependencies` task, whose gold set nearly halved between two runs
+of the *same* configuration. Same machinery, same metrics code: one measurement
+is stable and the other is not, and the difference is what the gold is made of.
+
+Every one of the 711 documents with a resolved statute carried gold, as all 88
+did before. That is the property of this pack that makes it measurable: its
+backbone is built from the citations in the decisions themselves.
+
+Cost: 55 minutes end to end — 7 minutes chunking and embedding, 25 minutes of
+extraction on `gemini-3.5-flash-lite`, and **23 minutes writing the property
+graph**, which is the part nobody budgets for. See ENGINE.md.
+
+### What the second task still cannot measure
+
+```
+article_citations (document_edges: CITES_ARTICLE)
+No gold edges. 4,689 chunk(s) are ingested, and no mention of type Article
+resolved to the backbone.
+```
+
+483 `ARTICLE` mentions were extracted and essentially none resolve. The pack
+says why in `resolve.yaml`, and it is a deliberate refusal rather than a gap:
+
+> A bare "369. madde" is left alone rather than guessed at: attaching it to
+> whichever statute was last mentioned would manufacture citations, and
+> manufactured citations are exactly what the evaluation is meant to detect.
+
+An article number identifies nothing on its own — 371 of *which* statute. The
+backbone writes `madde:6100/371`; the mention is `"371. maddesinde"`, and the
+statute is in the sentence extraction discarded.
+
+What makes this fixable rather than fundamental: extraction produced **546
+`HAS_ARTICLE` edges** from statutes to articles. Those are the model's own
+claims about which statute an article belongs to, not proximity guesses, so
+resolving a bare article through one is a different thing from the heuristic the
+pack refuses. That is the design sketched under "context-dependent resolution"
+and it is not built.
+
 **150 gold edges against oss's 20 at the time**, and intervals of ±5 rather than
 ±13. Two things produce that, and only one of them is the model.
 
@@ -659,17 +722,56 @@ title and outlet prepended to every chunk count as present. Scoring the bare
 body instead gave 11.4%, and would have flattered the graph by more than a
 factor of two. That is the one direction this measurement must not be wrong in.
 
-### tr-law's ablation is confounded — reported, not used
+### tr-law, unconfounded: 7.6%
 
-The same command on tr-law returns 5.9%, and the number should not be quoted.
-Its graph holds all 1,578 decisions while only 200 were ingested, so most of
-each answer is not in the vector store to be found. That gap is sampling, not
-structure. bench-wiki has no such confound: every one of its 609 articles is
-indexed, which is why it is the measurement above.
+The same command on tr-law returned 5.9% while only 200 of its 1,578 decisions
+were ingested, and that number was reported here and explicitly not used: most
+of each answer was not in the vector store to be found, so the gap was sampling
+rather than structure.
+
+With the whole corpus ingested the confound is gone, and the number moves very
+little:
+
+```bash
+uv run graphpack ablate tr-law     # all 1,578 decisions indexed
+```
+
+| question | intent | answer | recovered |
+|---|---|---:|---:|
+| citing-6356 | citing_decisions | 62 | 19% |
+| cocited-4857 | co_cited_statutes | 26 | 15% |
+| citing-4857 | citing_decisions | 61 | 11% |
+| citing-6100 | citing_decisions | 61 | 7% |
+| articles-4857 | articles_of | 15 | 7% |
+| articles-6100 | articles_of | 24 | 4% |
+| cited-by-decision | cited_statutes | 11 | **0%** |
+| chain-2025 | citation_chain | 10 | **0%** |
+| chain-emsal | citation_chain | 1 | **0%** |
+
+**Mean recovery 7.6% at top-30**, over ten questions, against bench-wiki's 26.8%.
+
+So the sampling was worth removing and it was not what made the number low. A
+graph answer in this domain is *less* recoverable from text than in the news
+corpus, not more — which is the direction that argues for having a graph. The
+reason is visible in the table: the citation-chain questions recover **nothing
+at all**. "Which decisions does this line of authority rest on" is three hops of
+`CITES`, and no single judgment states the chain; retrieval returns passages
+about the statute rather than the decisions that cite it.
+
+The comparison with bench-wiki is now between two clean measurements rather than
+one clean and one confounded, and they disagree by a factor of three. Both are
+lower bounds — name presence is necessary for a reader to assemble an answer,
+not sufficient — and neither says whether an end-to-end system *answers* the
+question.
 
 ## What has not been measured
 
-- **Article-level citations.** No gold survives resolution; see above.
+- **Article-level citations.** No gold survives resolution — 483 `ARTICLE`
+  mentions extracted at full corpus size and essentially none resolvable,
+  because a bare "371. madde" identifies nothing without its statute. Extraction
+  did produce 546 `HAS_ARTICLE` edges, which is what would make resolving them
+  a use of the model's own claim rather than the proximity guess the pack
+  refuses. Designed, not built.
 - ~~**oss under a gold generator that fits it.**~~ Done — see [Giving oss its
   documents back](#giving-oss-its-documents-back). It was pure configuration and
   it worked: 24 gold edges to 135, ±13 points to ±6. What it does *not* do is
@@ -679,9 +781,9 @@ indexed, which is why it is the measurement above.
   graph was the prompt we wrote](#a-third-of-the-graph-was-the-prompt-we-wrote).
   It was 31.4% of the entities, invisible to conformance checking, and removing
   it improved the dependency task rather than merely shrinking the graph.
-- **tr-law's ablation, unconfounded.** Its graph holds 1,578 decisions and 200
-  are ingested, so the 5.9% is mostly sampling. Ingesting the full corpus would
-  make it a second clean data point beside bench-wiki's 26.8%.
+- ~~**tr-law's ablation, unconfounded.**~~ Done: the full corpus is ingested and
+  the answer is **7.6%**, against bench-wiki's 26.8%. The sampling was worth
+  removing and was not what made the number low.
 - **Hybrid retrieval.** Every benchmark number above is the vector leg alone.
   `graphpack bench <pack> --ingest --hybrid` now scores the fusion retriever —
   the command exists because the BM25 docstore lives in the object that

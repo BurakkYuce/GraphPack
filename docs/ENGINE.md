@@ -241,6 +241,33 @@ Three consequences, none worked around:
   checked against the extraction counter (309 completions at the moment it
   reported 310).
 
+**The property-graph write is its own phase, and it is not small.** Measured on
+the full tr-law corpus — 1,578 documents, 4,689 chunks, a hosted extraction
+model — the engine's own breakdown was:
+
+```
+Direct document processing completed in 3301.39s —
+  Chunk: 420.27s   Vector: 2.59s   Search: 1.40s
+  KG: 1506.14s     Graph: 1367.67s
+```
+
+So **the graph write took 23 minutes against extraction's 25**, and it produced
+nothing observable while it ran: Neo4j held zero chunks and zero entities for
+the whole 23 minutes, and no query was executing for most of it. The work is
+elsewhere — the store embeds every extracted entity's name for its
+`__Entity__.embedding` vector index, one request at a time. On the 200-document
+oss run the same phase took 66 seconds for 419 entities, which is 0.157s each
+and predicts 70 minutes for tr-law's 26,914 before deduplication.
+
+Two consequences for anyone planning a large ingest. The wall clock is roughly
+*double* the extraction estimate, not equal to it. And moving extraction to a
+hosted model does not move this: it is local embedding, so it stays on the
+laptop however fast the extractor gets.
+
+GraphPack's own code never queries that entity vector index. The engine's
+property-graph retriever, which is one leg of `system.hybrid_retriever`, may —
+so it is not dead weight, and no knob is offered to skip it.
+
 ## Updating the pin
 
 Bumping `ENGINE_REF` in `.github/workflows/ci.yml` (and the note in

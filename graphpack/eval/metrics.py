@@ -53,6 +53,25 @@ class Scores:
         return 2 * p * r / (p + r) if (p + r) else 0.0
 
     @property
+    def precision_ceiling(self) -> float | None:
+        """The best precision this gold set allows, when that is below 1.0.
+
+        A gold set narrower than what extraction can claim puts a hard cap on
+        precision, and the bare number then reads as an error rate it is not.
+        The oss `thread_package` task is the case that prompted this: its gold
+        holds one package per thread — the one the thread's own repository
+        publishes — while extraction resolves every package the thread
+        discusses. 135 gold pairs against 218 claimed caps precision at 61.9%,
+        and the 38% excess is mostly correct readings this task cannot credit.
+
+        `None` when the cap does not bind, so a report only mentions it where it
+        changes how the number should be read.
+        """
+        if not self.predicted or self.gold >= self.predicted:
+            return None
+        return self.gold / self.predicted
+
+    @property
     def precision_interval(self) -> tuple[float, float]:
         return _wilson(self.true_positive, self.predicted)
 

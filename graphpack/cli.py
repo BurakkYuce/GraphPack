@@ -722,6 +722,15 @@ def eval_command(
             f"backbone holds {diagnostics['backbone_edges']:,} edges[/dim]"
         )
 
+        # Say so when precision cannot reach 100% however good extraction is.
+        # Read without it, a capped precision looks like an error rate.
+        if (ceiling := scores.precision_ceiling) is not None:
+            console.print(
+                f"  [dim]precision is capped at {ceiling:.1%} by construction — "
+                f"{scores.gold:,} gold pair(s) against {scores.predicted:,} claimed; "
+                f"the excess cannot be scored as correct even where it is[/dim]"
+            )
+
         if result.misses:
             table = Table("where the misses come from", "sampled")
             for cause, count in sorted(result.misses.items(), key=lambda kv: -kv[1]):

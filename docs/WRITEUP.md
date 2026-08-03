@@ -72,10 +72,10 @@ retrieval only — the engine's BM25 leg does not survive a process boundary —
 no comparison to the published table is claimed, because matching its embedding
 model and reranking is a separate run.
 
-**Extraction is measured in two domains now, and they disagree by a lot.**
-tr-law: F1 **81.4%**, precision 97.2%, over 150 gold edges, interval ±5. oss:
-F1 22.2% over *twenty* gold edges, interval ±13 — a number that supports no
-conclusion about the system and is not offered as one.
+**Extraction is measured in two domains now.** tr-law: F1 **81.4%**, precision
+97.2%, over 150 gold edges, interval ±5. oss took longer to become measurable at
+all, and the reason it eventually was is the more useful half of the story —
+see the next section.
 
 That gap looked like it had three causes — a better model, an enforced
 ontology, a working extractor — so oss was re-run on tr-law's exact setup to
@@ -83,12 +83,33 @@ find out. **Two of the three did nothing.** Precision came back identical to
 the decimal, recall halved, and F1 went from 22.2% to 15.4%: inside the same
 interval, and certainly not an improvement.
 
-What is left is the pack — and specifically, whether its documents are nodes.
+What was left is the pack — and specifically, whether its documents are nodes.
 tr-law's are: a decision cites a statute, so every citation is a scoreable fact
 about that document, and all 88 documents with a resolved entity carried gold.
-oss's documents are not in its graph, so gold has to come from two related
+oss's documents were not in its graph, so gold had to come from two related
 packages happening to appear in the same thread. 69% of its threads mention one
 package. Widening the backbone eight-fold was tried and bought two gold edges.
+
+**Then the diagnosis was acted on, and this one held.** Three load steps giving
+each thread an `Issue` node and an edge to the package its repository publishes,
+one eval task using the document-shaped generator: **24 gold edges to 135, and
+the interval from ±13 points to ±6.** No GraphPack code, no engine change, and
+no re-extraction — it scores the same run, so the gold generator is the only
+variable. Recall 85.2%, precision 52.8%.
+
+Two things that matters for, beyond oss finally being measurable. It is the
+third diagnosis this project wrote down and ran, and the first that survived —
+which is the point of writing them down. And it is the thesis in miniature: what
+made a domain measurable was configuration.
+
+Read the precision with its ceiling, though. Gold holds one package per thread
+while extraction resolves every package the thread discusses — 135 possible gold
+pairs against 218 claimed — so precision cannot exceed **61.9%** however good the
+model is, and most of the excess is correct reading that this gold cannot
+credit. `graphpack eval` prints that cap whenever it binds, because a capped
+precision read as an error rate is the kind of wrong number this project treats
+as worse than an error. The new task also asks something easier than the old
+one, and both are kept side by side so that is visible rather than buried.
 
 The extractor change was not wasted: both packs now extract 100% conforming
 relations and zero invented entity types, where the local run managed 17.8% and
@@ -102,34 +123,43 @@ in no passage. That is the case for a structured half, stated as a number rather
 than asserted.
 
 Having both in one repository is what makes either legible. Same metrics code,
-same interval arithmetic, 2,255 measurements against 20: ±2 points against ±13.
-Nothing about the system got more certain between those two rows.
+same interval arithmetic, 2,255 measurements against 24: ±2 points against ±13.
+Nothing about the system got more certain between those two rows — and the way
+the second row eventually narrowed to ±6 was by changing what counted as gold,
+not by changing the system at all.
 
 ## Three things that were learned the hard way
 
-**Two diagnoses, both written down here, both wrong.** The tr-law/oss gap was
-attributed to model, ontology enforcement and extractor; a controlled re-run
-showed the first two changed the graph's quality and not its score. What was
-left — oss's backbone covering a tenth of what its corpus discusses — was then
-written down as the remaining cause, and widening that backbone eight-fold moved
-the score by two gold edges.
+**Three diagnoses, written down here in order. The first two were wrong.** The
+tr-law/oss gap was attributed to model, ontology enforcement and extractor; a
+controlled re-run showed the first two changed the graph's quality and not its
+score. What was left — oss's backbone covering a tenth of what its corpus
+discusses — was then written down as the remaining cause, and widening that
+backbone eight-fold moved the score by two gold edges.
 
-The actual cause is structural and neither guess came near it: 69% of oss's
-documents mention exactly one package, and its gold generator needs two.
+The actual cause was structural and neither guess came near it: 69% of oss's
+documents mention exactly one package, and its gold generator needs two. That
+was the third diagnosis, written into this file before it was run, and running
+it took the gold set from 24 edges to 135.
 
-The lesson is not that the guesses were bad. It is that writing an attribution
-down is what makes it a claim somebody can run, and the running is cheap — a
-dollar and twenty minutes, twice — while the wrong belief would have shaped
-every decision after it.
+The lesson is not that the first two guesses were bad. It is that writing an
+attribution down is what makes it a claim somebody can run, and the running is
+cheap — a dollar and twenty minutes, twice — while the wrong belief would have
+shaped every decision after it. The third one was cheaper still: no model ran at
+all, because the change was configuration.
 
-**Gold is scarcer than it looks.** The oss corpus grades itself: for any two
-packages a thread mentions, the backbone already states whether one depends on
-the other, so no annotation is needed. The catch is that both ends have to be
-*in* the backbone. The backbone is the top 1,000 PyPI packages; issue threads
-discuss a far wider ecosystem, and half of all package mentions resolve to
-packages it does not contain. 200 documents, 3,528 entities and 391 package
-mentions produced 20 scoreable pairs. An early estimate said 73. The fix is a
-wider backbone, which costs nothing — backbones load without a model.
+**Gold is scarcer than it looks, and the generator decides how scarce.** The oss
+corpus grades itself: for any two packages a thread mentions, the backbone
+already states whether one depends on the other, so no annotation is needed. The
+catch is that a *pair* has to be in one document. 200 documents, 3,528 entities
+and 391 package mentions produced 20 scoreable pairs. An early estimate said 73.
+Widening the backbone eight times over — the obvious fix, and free, because
+backbones load without a model — produced 24.
+
+The same 200 documents, the same extraction run, scored by a generator that asks
+about one document rather than a pair: **135.** Nothing about the corpus changed.
+What a corpus can grade depends on the question you ask it, and that is a design
+decision made in `eval.yaml` rather than a property of the data.
 
 **The ontology constrains extraction only if you make it.** The oss run put
 17.8% of relations and 42% of entity labels inside the ontology; the tr-law run
@@ -205,11 +235,15 @@ the undifferentiated version sent somebody to the wrong place.
 Stated plainly, because the numbers above are only worth what the caveats
 allow.
 
-- **oss cannot be measured this way at all.** Twenty-four gold edges, ±13
-  points, and widening the backbone eight-fold moved that by two. 69% of its
-  documents mention exactly one package, and `backbone_edges` needs two. The
-  fix is a different gold generator, not more data — see RESULTS.md.
-- **The oss measurement is weak on its own terms.** ±13 points on twenty edges.
+- **oss's dependency task still cannot be measured.** Twenty-four gold edges,
+  ±13 points, and widening the backbone eight-fold moved that by two. That task
+  is reported and no conclusion is drawn from it. What changed is that the pack
+  now also carries a task that *can* be measured — 135 edges, ±6 — so the domain
+  is no longer unmeasurable even though the harder question about it is.
+- **And that measurable task asks an easier question.** "Is the thread's own
+  package named in the thread" is easier than "did the model find a dependency
+  relation", and its precision is capped at 61.9% by how the gold is built. Both
+  are stated next to the number rather than under it; see RESULTS.md.
 - **Article-level citations score nothing.** The extracted mention is `"371.
   maddesinde"` and the backbone identifier is `madde:6100/371`: an article
   number alone identifies nothing, and the statute was in the sentence

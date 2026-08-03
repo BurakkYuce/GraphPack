@@ -90,6 +90,26 @@ def test_intervals_stay_inside_zero_and_one():
         assert 0.0 <= low <= high <= 1.0
 
 
+def test_a_gold_set_narrower_than_the_claims_caps_precision():
+    """The oss `thread_package` task, in miniature. Its gold holds one package
+    per thread — the one that thread's own repository publishes — while
+    extraction resolves every package the thread discusses. 135 gold pairs
+    against 218 claimed caps precision at 61.9% however good the model is, and
+    the measured 52.8% read without that cap looks like an error rate."""
+    scores = score(predicted={"a", "b", "c", "d"}, gold={"a", "b"})
+
+    assert scores.precision_ceiling == pytest.approx(0.5)
+    assert scores.precision <= scores.precision_ceiling
+
+
+def test_no_cap_is_reported_when_it_does_not_bind():
+    """`None` rather than 1.0, so a report can stay silent where the number
+    needs no qualification — which is the ordinary case."""
+    assert score(predicted={"a"}, gold={"a", "b", "c"}).precision_ceiling is None
+    assert score(predicted={"a", "b"}, gold={"a", "b"}).precision_ceiling is None
+    assert score(predicted=[], gold={"a"}).precision_ceiling is None
+
+
 def test_examples_are_kept_for_the_report():
     scores = score(predicted={"a", "b"}, gold={"b", "c"})
 

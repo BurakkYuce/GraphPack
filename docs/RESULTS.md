@@ -103,10 +103,14 @@ same thread — and coincidence is rare.
 **The generator, not the corpus, is what to change.** `document_edges` scores a
 document against what the backbone says it points at; `backbone_edges` scores a
 pair against a document that mentions both. The first is available whenever
-documents are entities. oss's are not, today: its corpus is issue threads and its
-backbone is packages, with no edge between them. Giving oss an `Issue` node per
-thread with `MENTIONS_PACKAGE` edges from its metadata would make the strong
-generator available to it — that is a pack change, and it is untested.
+documents are entities. oss's were not: its corpus was issue threads and its
+backbone packages, with no edge between them.
+
+That prediction was written here before it was run, and it was then run — see
+[Giving oss its documents](#giving-oss-its-documents-back) below. It holds: an
+`Issue` node per thread took the gold set from 24 edges to 135 and the interval
+from ±13 points to about ±6, as pure configuration. It also exposed a limit of
+the new task that the prediction did not anticipate, which is written up there.
 
 ### Where the misses come from
 
@@ -125,6 +129,75 @@ the ontology does not pair that way, e.g. `ipython -> psutil` extracted as
 
 So recall is lost at relation extraction, not at entity extraction or
 resolution. That is worth knowing before anyone tunes an alias table.
+
+## Giving oss its documents back
+
+```bash
+uv run graphpack backbone load oss     # Issue nodes + MENTIONS_PACKAGE edges
+uv run graphpack eval oss              # both tasks, one extraction run
+```
+
+The change is configuration: three load steps in `domains/oss/sources.yaml`
+building an `Issue` node per thread and an edge to the package its repository
+publishes, and one task in `eval.yaml` using `document_edges`. No GraphPack code
+and no re-extraction — this scores the *same* run as everything above, so the
+only variable is the gold generator.
+
+| | `dependencies` | `thread_package` |
+|---|---|---|
+| generator | `backbone_edges` | `document_edges` |
+| asks | did extraction find two *related* packages in one thread? | did it find the package the thread is about? |
+| gold edges | 24 | **135** |
+| documents carrying gold | 20 of 139 | **135 of 139** |
+| precision | 17.6% [6.2–41.0] | 52.8% [46.1–59.3] |
+| recall | 12.5% [4.3–31.0] | **85.2%** [78.2–90.2] |
+| F1 | 14.6% | 65.2% |
+| interval width | **±13 points** | **±6 points** |
+
+**The interval is the result.** oss could not be measured before — ±13 points on
+24 edges supports no conclusion, which is what this document said and still
+says. It can be measured now, and the cost was configuration.
+
+### Read the precision with its ceiling
+
+**52.8% is not an error rate, and the tool now says so.** Gold holds exactly one
+package per thread, because the repository list is deduplicated by slug and each
+repository is credited to one package. Extraction resolves *every* package a
+thread discusses: 218 (document, package) pairs against 135 that can possibly be
+gold. So precision is capped at **61.9%** by construction, and the measured
+52.8% leaves 9 points of headroom rather than 47.
+
+Most of that 38% excess is correct reading. A thread in `aio-libs/aiobotocore`
+mentioning `boto3`, `botocore` and `awscli` is scored with one true positive and
+three false ones, and all four readings are right.
+
+`graphpack eval` prints the cap whenever it binds, because a capped precision
+read as an error rate is exactly the kind of wrong number this project treats as
+worse than an error.
+
+### The easier question, said plainly
+
+`thread_package` asks something easier than `dependencies` did, and the two are
+kept side by side so that is visible rather than buried. 85.2% recall on "is the
+thread's own package named in the thread" is a real measurement of extraction
+and resolution end to end, and it is not the same measurement as "did the model
+find a dependency relation", which remains at 12.5% on the same run.
+
+What the harder task cannot do is *support* a number, and that is the difference
+worth having. Both are reported.
+
+### Two caveats, both small and both real
+
+**Four of 139 documents have no `Issue` node.** They were ingested from an
+earlier `issues.jsonl`; GitHub's `sort=comments` ordering drifts between fetches,
+so a re-fetch does not return the same page. Those four are excluded from gold
+rather than counted as misses. A pack wanting strict reproducibility should
+record the fetch date in `data/MANIFEST.txt` and re-ingest from the same file.
+
+**Monorepos add noise, not bias.** One package is credited per repository, so a
+thread in a repository that publishes several is scored against whichever one
+the derive step kept. It is a limit of deriving this from published metadata
+alone, and it is stated rather than corrected.
 
 ## The ontology does not constrain extraction. At all.
 
@@ -421,11 +494,11 @@ indexed, which is why it is the measurement above.
 ## What has not been measured
 
 - **Article-level citations.** No gold survives resolution; see above.
-- **oss under a gold generator that fits it.** Its documents are not entities,
-  so `backbone_edges` needs a coincidence that 69% of the corpus does not
-  supply. Giving each thread an `Issue` node with `MENTIONS_PACKAGE` edges from
-  its metadata would make `document_edges` available. Pack change, no model, and
-  the one change that would make the second domain measurable.
+- ~~**oss under a gold generator that fits it.**~~ Done — see [Giving oss its
+  documents back](#giving-oss-its-documents-back). It was pure configuration and
+  it worked: 24 gold edges to 135, ±13 points to ±6. What it does *not* do is
+  make `dependencies` measurable; that task still has 24 edges and still
+  supports no conclusion, and the new task answers an easier question.
 - **oss's prompt contamination.** `url`, `state` and `created_at` still reach
   the model as document text — the mechanism to hide them exists
   (`hide_from_model`) and was deliberately not applied, so the committed

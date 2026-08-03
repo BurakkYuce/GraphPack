@@ -131,3 +131,40 @@ def test_provider_may_arrive_as_an_enum():
         value = "ollama"
 
     assert extractor_type_for(Provider()) == "dynamic"
+
+
+# ----------------------------------------------------------------------
+# Provider limits that are not the same limit
+# ----------------------------------------------------------------------
+
+
+def test_gemini_drives_the_schema_extractor_but_without_properties():
+    """Two unrelated limits that were one set before gemini arrived. Ollama
+    cannot drive the schema extractor at all; gemini drives it well and only
+    refuses a schema carrying properties — Google's Developer API rejects the
+    `additionalProperties` LlamaIndex emits for an entity's property dict."""
+    from graphpack.models import extractor_type_for, properties_supported
+
+    assert extractor_type_for("gemini") == "schema"
+    assert properties_supported("gemini") is False
+    assert extractor_type_for("ollama") == "dynamic"
+    assert properties_supported("ollama") is False
+
+
+def test_a_provider_with_neither_limit_keeps_both():
+    from graphpack.models import extractor_type_for, properties_supported
+
+    for provider in ("openai", "anthropic"):
+        assert extractor_type_for(provider) == "schema"
+        assert properties_supported(provider) is True
+
+
+def test_only_gemini_needs_synchronous_extraction():
+    """`llama_index.llms.google_genai` calls asyncio.run inside its synchronous
+    `_chat`, and the async structured-output path reaches it from inside a
+    running loop. Nothing else measured here has that fault."""
+    from graphpack.models import NEEDS_SYNC_EXTRACTION, drive_extraction_synchronously
+
+    assert NEEDS_SYNC_EXTRACTION == frozenset({"gemini"})
+    assert drive_extraction_synchronously(object(), "openai") is False
+    assert drive_extraction_synchronously(object(), None) is False

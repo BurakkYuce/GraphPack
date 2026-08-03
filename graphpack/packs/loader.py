@@ -22,7 +22,12 @@ import logging
 import os
 from typing import Any
 
-from graphpack.models import extractor_type_for, properties_supported, tune_llm
+from graphpack.models import (
+    drive_extraction_synchronously,
+    extractor_type_for,
+    properties_supported,
+    tune_llm,
+)
 from graphpack.packs.contract import Pack
 from graphpack.packs.ontology import CompiledSchema, compile_ontology
 
@@ -156,12 +161,55 @@ def build_system(pack: Pack, schema: CompiledSchema | None = None):
     """
     from hybrid_system import HybridSearchSystem  # engine module
 
+    schema = schema or compile_pack_schema(pack)
     settings = build_settings(pack, schema)
     system = HybridSearchSystem.from_settings(settings)
     # Adjust the LLM the engine just built. The engine assigns the same object
     # to LlamaIndex's global Settings, so this reaches every consumer of it.
     tune_llm(system.llm, settings.llm_provider)
+    enforce_triple_constraints(system, schema, settings.llm_provider)
     return system
+
+
+def enforce_triple_constraints(system, schema, provider=None) -> None:
+    """Give the schema extractor the triple constraints the engine never forwards.
+
+    `SchemaLLMPathExtractor` drops any triple whose (subject, relation, object)
+    types are not in `kg_validation_schema` — and the engine builds it with
+    `possible_entities` and `possible_relations` only. LlamaIndex then falls back
+    to `DEFAULT_VALIDATION_SCHEMA`, its PRODUCT/MARKET/TECHNOLOGY example. Every
+    triple a real pack produces fails that check, so extraction returned exactly
+    zero entities from Turkish case law while reporting no error at all.
+
+    The constraints are the pack's own `rdfs:domain`/`rdfs:range`, which the
+    ontology compiler already derives. Installed after construction because the
+    engine's `create_extractor` takes no argument for them.
+
+    This is also the correction to a claim made earlier in this project: triple
+    constraints do not "govern nothing during extraction". On the dynamic path
+    they govern nothing; on the schema path they govern everything, and the only
+    question was whose schema.
+    """
+    relationships = [tuple(triple) for triple in schema.triple_constraints]
+    if not relationships:
+        return
+
+    manager = system.schema_manager
+    build = manager.create_extractor
+
+    def create_extractor(*args, **kwargs):
+        extractor = build(*args, **kwargs)
+        if drive_extraction_synchronously(extractor, provider):
+            logger.info("Extraction driven synchronously — see NEEDS_SYNC_EXTRACTION")
+        # The dynamic extractor has no such field and wants none.
+        if hasattr(extractor, "kg_validation_schema"):
+            extractor.kg_validation_schema = {"relationships": relationships}
+            logger.info(
+                "Extractor constrained to the pack's %d declared triple(s)", len(relationships)
+            )
+        return extractor
+
+    manager.create_extractor = create_extractor
 
 
 def _log_effective_config(pack: Pack, settings) -> None:

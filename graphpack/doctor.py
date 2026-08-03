@@ -199,10 +199,18 @@ EMBEDDING_PROVIDERS = frozenset(
     }
 )
 
+#: The variable each provider's key must be in — the engine's name for it, not
+#: the vendor's, and not the same name across a vendor's two halves.
+#:
+#: For Google the LLM and the embedding path disagree: `config.Settings` reads
+#: GEMINI_API_KEY for the gemini LLM, while `llamaindex/llm/embedding_factory.py`
+#: accepts GOOGLE_API_KEY *or* GEMINI_API_KEY for google embeddings. Listing
+#: GOOGLE_API_KEY for the LLM here failed a correctly configured run and told it
+#: to set a variable that path never reads.
 _API_KEY_VARS = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
-    "gemini": "GOOGLE_API_KEY",
+    "gemini": "GEMINI_API_KEY",
     "google": "GOOGLE_API_KEY",
     "groq": "GROQ_API_KEY",
     "azure_openai": "AZURE_OPENAI_API_KEY",

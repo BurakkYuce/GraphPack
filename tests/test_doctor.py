@@ -122,3 +122,13 @@ def test_a_pulled_model_passes(monkeypatch):
 def test_model_names_account_for_the_implicit_latest_tag(wanted, available, expected):
     """`ollama pull nomic-embed-text` lists as `nomic-embed-text:latest`."""
     assert _has_model(wanted, available) is expected
+
+
+def test_the_gemini_key_variable_is_the_one_the_engine_reads():
+    """`config.Settings` reads GEMINI_API_KEY for the gemini LLM. The embedding
+    path for the same vendor accepts GOOGLE_API_KEY too, and naming that one
+    here failed a correctly configured run — telling it to set a variable the
+    LLM path never looks at."""
+    from graphpack.doctor import _API_KEY_VARS
+
+    assert _API_KEY_VARS["gemini"] == "GEMINI_API_KEY"

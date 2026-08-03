@@ -33,6 +33,12 @@ class TaskResult:
     task: Task
     scores: Scores
     diagnostics: dict = field(default_factory=dict)
+    #: Subjects the holdout kept for scoring, or 0 when nothing was withheld.
+    #: Carried per task because the diagnostics beside it describe the *whole*
+    #: corpus — the generator runs before the split — and printing "710 of 710
+    #: documents carried gold" next to a score computed on 30% of them invites
+    #: exactly the division a reader would make.
+    held_out: int = 0
     #: Why each missed gold edge was missed, counted by cause.
     misses: dict[str, int] = field(default_factory=dict)
     miss_examples: dict[str, list] = field(default_factory=dict)
@@ -70,6 +76,7 @@ def run_eval(session, pack: str, rules: EvalRules, example_limit: int = 10) -> E
                 diagnostics=diagnostics,
                 misses=misses,
                 miss_examples=examples,
+                held_out=held_out,
             )
         )
         report.documents_scored = diagnostics.get("documents_with_resolved_entities", 0)

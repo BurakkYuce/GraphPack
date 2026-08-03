@@ -217,3 +217,44 @@ def test_every_generator_reports_the_diagnostics_the_report_prints():
         source = inspect.getsource(getattr(gen, name))
         missing = {key for key in required if f'"{key}"' not in source}
         assert not missing, f"{name} does not report {sorted(missing)}"
+
+
+@pytest.mark.unit
+def test_a_task_reports_how_many_subjects_the_holdout_kept():
+    """The diagnostics beside a score describe the whole corpus.
+
+    The generator runs before the split, so `documents_carrying_gold` counts
+    every document while precision and recall are computed on the held-out
+    share. tr-law printed "710 of 710 documents carried gold" next to numbers
+    scored on 213 — two quantities a reader would divide.
+    """
+    from graphpack.eval.contract import EvalRules, Task
+    from graphpack.eval.runner import run_eval
+
+    task = Task(
+        name="t",
+        generator="fake",
+        relation="R",
+        backbone_relation="R",
+        endpoint_label="L",
+    )
+    rules = EvalRules(tasks=(task,), holdout=0.5, seed=0)
+    gold = {(f"s{i}", "o") for i in range(10)}
+
+    def generator(_session, _pack, _task):
+        return set(gold), set(gold), {"documents_carrying_gold": 10}
+
+    from graphpack.eval import runner as runner_module
+
+    original = dict(runner_module.GENERATORS)
+    runner_module.GENERATORS["fake"] = generator
+    try:
+        report = run_eval(None, "p", rules)
+    finally:
+        runner_module.GENERATORS.clear()
+        runner_module.GENERATORS.update(original)
+
+    assert report.results[0].held_out == 5
+    # And the whole-corpus diagnostic is still whole-corpus, not silently
+    # rewritten to match — the point is that both are visible.
+    assert report.results[0].diagnostics["documents_carrying_gold"] == 10

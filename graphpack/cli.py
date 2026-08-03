@@ -795,10 +795,18 @@ def eval_command(
             continue
 
         console.print("  " + scores.line("micro"))
+        # The diagnostics describe the whole corpus: the generator runs before
+        # the holdout split. Saying so is not pedantry — without it the line
+        # reads as the denominator of the score printed above it.
+        scope = (
+            f" (whole corpus; scored on {result.held_out} held-out subject(s))"
+            if result.held_out
+            else ""
+        )
         console.print(
             f"  [dim]{diagnostics['documents_carrying_gold']} of "
             f"{diagnostics['documents_with_resolved_entities']} documents carried gold; "
-            f"backbone holds {diagnostics['backbone_edges']:,} edges[/dim]"
+            f"backbone holds {diagnostics['backbone_edges']:,} edges{scope}[/dim]"
         )
 
         # Say so when precision cannot reach 100% however good extraction is.

@@ -158,6 +158,34 @@ only variable is the gold generator.
 24 edges supports no conclusion, which is what this document said and still
 says. It can be measured now, and the cost was configuration.
 
+**Which extraction run this scores, since the graph has since been replaced.**
+The table above is the ollama/dynamic run — 3,528 entities from 200 documents.
+[The controlled comparison](#the-controlled-comparison-and-it-refutes-what-this-section-first-claimed)
+below re-ran the same 200 documents on gemini with the schema extractor, and
+that is what the database holds today. Re-running `eval oss` therefore does not
+reproduce the numbers above; it reproduces these:
+
+| `thread_package` | ollama, dynamic | gemini, schema |
+|---|---:|---:|
+| entities extracted | 3,528 | **419** |
+| gold edges | 135 | **94** |
+| precision | 52.8% [46.1–59.3] | 43.1% [36.2–50.2] |
+| precision ceiling | 61.9% | 50.0% |
+| **recall** | **85.2%** [78.2–90.2] | **86.2%** [77.8–91.7] |
+| F1 | 65.2% | 57.4% |
+
+**Recall is the row that matters and it does not move** — 85.2% against 86.2%,
+each inside the other's interval. Precision falls with its ceiling, and the
+ceiling falls because gold shrank: gold needs a resolved package, the schema
+extractor produces an eighth as many entities, so fewer documents are eligible.
+That is the self-labelling design showing its cost — the gold set is not
+independent of the extractor being scored — and it is the clearest instance of
+it in this repository.
+
+This is what the phase-review round is for: the check is to re-run what should
+not have changed, and the finding was that the graph underneath a published
+table had been replaced two phases earlier.
+
 ### Read the precision with its ceiling
 
 **52.8% is not an error rate, and the tool now says so.** Gold holds exactly one

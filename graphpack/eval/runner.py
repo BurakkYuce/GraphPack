@@ -172,16 +172,26 @@ def why_no_gold(diagnostics: dict, pack: str) -> str:
     """
     resolved_documents = diagnostics.get("documents_with_resolved_entities", 0)
     resolvable = diagnostics.get("resolvable_entities", 0)
+    # Whether an ingest happened at all, which the two counts above cannot say:
+    # both are zero when nothing ran *and* when everything ran and nothing of
+    # this task's type resolved. tr-law's article task hit the second and was
+    # told to re-run a fifty-five minute ingest that had just succeeded.
+    chunks = diagnostics.get("chunks_ingested")
 
-    if not resolved_documents and not resolvable:
+    if not resolved_documents and not resolvable and not chunks:
         return (
             "Nothing has been through extraction and resolution yet — "
             f"run `graphpack ingest {pack}` then `graphpack resolve {pack}`."
         )
     if not resolvable:
+        label = diagnostics.get("endpoint_label")
+        of_type = f" of type {label}" if label else ""
+        corpus = f"{chunks:,} chunk(s) are ingested, and n" if chunks else "N"
         return (
-            "Extraction produced mentions but resolution linked none of them to "
-            "the backbone. Check resolve.yaml before reading anything else."
+            f"{corpus}o mention{of_type} resolved to the backbone. Extraction may not be "
+            "producing that type at all, or resolve.yaml has no rule that reaches it — "
+            "`graphpack resolve` prints the unresolved sample, and `graphpack inspect` "
+            "says which types extraction actually wrote."
         )
     return (
         "Mentions resolved, but no document mentions two entities the backbone "

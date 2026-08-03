@@ -210,8 +210,18 @@ def document_edges(session, pack: str, task) -> tuple[set, set, dict]:
             "documents_with_resolved_entities": len(ingested),
             "resolvable_entities": sum(len(e) for e in mentions.values()),
             "mentions_per_document": _histogram(mentions),
+            # So an empty result can tell "nothing ran" from "everything ran and
+            # nothing of this type resolved". Without it the report told tr-law
+            # to re-run an ingest that had just taken fifty-five minutes.
+            "chunks_ingested": _chunk_count(session, pack),
+            "endpoint_label": task.endpoint_label,
         },
     )
+
+
+def _chunk_count(session, pack: str) -> int:
+    record = session.run("MATCH (c:Chunk {pack: $pack}) RETURN count(c) AS n", pack=pack).single()
+    return int(record["n"]) if record else 0
 
 
 #: Registered last, so every generator above is defined by the time it is read.

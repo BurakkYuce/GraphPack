@@ -683,6 +683,14 @@ indexed, which is why it is the measurement above.
   are ingested, so the 5.9% is mostly sampling. Ingesting the full corpus would
   make it a second clean data point beside bench-wiki's 26.8%.
 - **Hybrid retrieval.** Every benchmark number above is the vector leg alone.
+  `graphpack bench <pack> --ingest --hybrid` now scores the fusion retriever —
+  the command exists because the BM25 docstore lives in the object that
+  ingested, so the two have to happen in one process. The number is a run, and
+  it is not in this document until it has been run.
+- **Run-to-run variance on anything but oss.** Measured there for the first time
+  and it mattered: the same configuration twice gave a `dependencies` gold set
+  of 66 and then 37. Nothing here says whether tr-law or the benchmark move
+  that much, and the intervals throughout this document assume they do not.
 - **The published MultiHop-RAG table.** Not a run away, as this document twice
   claimed — the metrics differ. Ours scores articles where the paper scores
   chunks, and our Hit@K is "found at least one" where the paper's is recall over

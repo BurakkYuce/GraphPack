@@ -11,12 +11,12 @@ is still being tuned.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass
 
 from graphpack.corpus import build_documents
+from graphpack.loop import run
 from graphpack.packs.contract import Pack
 
 logger = logging.getLogger(__name__)
@@ -45,12 +45,20 @@ def ingest_pack(
     sample: int | None = None,
     seed: int = 0,
     skip_graph: bool = False,
+    system=None,
 ) -> IngestReport:
     """Ingest *pack*'s corpus.
 
     ``skip_graph`` runs everything except extraction, which is the cheap way to
     check that documents, chunking and embeddings are right before committing
     hours to the LLM.
+
+    ``system`` lets a caller supply the engine instance instead of having one
+    built here, so that whatever runs afterwards is talking to the *same* one.
+    That matters for exactly one thing and it is not an optimisation: the
+    engine's BM25 leg is an in-memory docstore owned by the process — and by the
+    object — that ingested, so a benchmark wanting a full-text half has to hold
+    on to this system rather than build a fresh one.
     """
     from graphpack.backbone import load_sources, session_scope
     from graphpack.packs.loader import build_system
@@ -76,11 +84,12 @@ def ingest_pack(
         pack.name,
         " without extraction" if skip_graph else "",
     )
-    system = build_system(pack)
+    if system is None:
+        system = build_system(pack)
 
     start = time.time()
     try:
-        asyncio.run(system._ingest_source_documents(documents, skip_graph=skip_graph))
+        run(system._ingest_source_documents(documents, skip_graph=skip_graph))
     except Exception as exc:
         raise IngestError(f"{pack.name}: ingest failed — {exc}") from exc
     duration = time.time() - start

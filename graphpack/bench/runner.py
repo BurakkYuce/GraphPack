@@ -116,31 +116,60 @@ def check_gold_is_reachable(session, pack: str, queries: list[BenchQuery]) -> No
         )
 
 
-def retrieve(system, question: str, top_k: int) -> list[str]:
+class RetrieverUnavailable(Exception):
+    """Raised when the requested retrieval leg does not exist in this process."""
+
+
+def _retriever(system, top_k: int, hybrid: bool):
+    """The retriever to score with.
+
+    Both legs return LlamaIndex nodes, so ``ref_doc_id`` survives either way.
+    That is the property the benchmark actually depends on — see ``retrieve``.
+    """
+    if not hybrid:
+        return system.vector_index.as_retriever(similarity_top_k=top_k)
+
+    retriever = getattr(system, "hybrid_retriever", None)
+    if retriever is None:
+        raise RetrieverUnavailable(
+            "This system has no hybrid retriever. The engine's BM25 leg is an "
+            "in-memory docstore owned by the process that ingested, so hybrid "
+            "retrieval only exists in a process that has ingested — run "
+            "`graphpack bench <pack> --ingest --hybrid`."
+        )
+    return retriever
+
+
+def retrieve(system, question: str, top_k: int, hybrid: bool = False) -> list[str]:
     """Retrieved chunks, as the ids of the documents they came from.
 
     Not through ``system.search``: that returns
     ``{content, file_name, file_type, rank, score, source}`` and no document
     identity at all — ``source`` is the retriever's name, so every passage
     attributed to an article called "Qdrant vector" and the benchmark scored a
-    confident zero. Retrieving through the index keeps ``ref_doc_id``, which is
-    the id the pack's corpus block assigned.
+    confident zero. Retrieving through a retriever keeps ``ref_doc_id``, which
+    is the id the pack's corpus block assigned.
 
-    Vector only. The engine's BM25 leg is an in-memory docstore belonging to the
-    process that ingested, so a benchmark run separately has no full-text half.
-    That is a property of the measurement and is reported with the numbers.
+    ``hybrid`` scores the engine's fusion retriever — vector, BM25 and the
+    property graph — instead of the vector leg alone. It is off by default and
+    unavailable in a process that has not ingested, because the BM25 docstore
+    lives in memory and belongs to the object that built it.
     """
-    from graphpack.agent.tools import _run
+    from graphpack.loop import run
 
-    retriever = system.vector_index.as_retriever(similarity_top_k=top_k)
-    nodes = _run(retriever.aretrieve(question))
+    retriever = _retriever(system, top_k, hybrid)
+    nodes = run(retriever.aretrieve(question))
     return [(node.node.ref_doc_id or "").strip() for node in nodes]
 
 
-def run_query(system, query: BenchQuery, top_k: int = DEFAULT_TOP_K) -> QueryResult:
+def run_query(
+    system, query: BenchQuery, top_k: int = DEFAULT_TOP_K, hybrid: bool = False
+) -> QueryResult:
     """Retrieve for one question and reduce the chunks to ranked articles."""
     try:
-        documents = retrieve(system, query.question, top_k)
+        documents = retrieve(system, query.question, top_k, hybrid=hybrid)
+    except RetrieverUnavailable:
+        raise  # a missing leg is a setup error, not a query that scored zero
     except Exception as exc:
         logger.warning("Retrieval failed for %r — %s", query.question[:60], exc)
         documents = []
@@ -170,11 +199,12 @@ def run_benchmark(
     top_k: int = DEFAULT_TOP_K,
     ks: tuple[int, ...] = (1, 2, 4, MRR_DEPTH),
     progress=None,
+    hybrid: bool = False,
 ) -> BenchScores:
     """Run every query and score the lot."""
     results = []
     for index, query in enumerate(queries, start=1):
-        results.append(run_query(system, query, top_k=top_k))
+        results.append(run_query(system, query, top_k=top_k, hybrid=hybrid))
         if progress and index % 50 == 0:
             progress(index, len(queries))
 

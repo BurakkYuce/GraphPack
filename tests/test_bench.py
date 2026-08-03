@@ -120,8 +120,14 @@ class FakeSystem:
         def as_retriever(self, similarity_top_k=10):
             return FakeSystem._Retriever(self.docs, similarity_top_k)
 
-    def __init__(self, docs):
+    def __init__(self, docs, hybrid_docs=None):
         self.vector_index = FakeSystem._Index(docs)
+        # A system built without ingesting has no hybrid retriever at all — the
+        # engine's BM25 leg is an in-memory docstore owned by the object that
+        # ingested. `None` is that state, and it must not be scored as a miss.
+        self.hybrid_retriever = (
+            FakeSystem._Retriever(hybrid_docs, 10) if hybrid_docs is not None else None
+        )
 
 
 def test_several_chunks_of_one_article_are_one_result():
@@ -256,6 +262,29 @@ def test_retrieved_but_unattributable_is_reported_as_such():
     scores = score([result([], ["gold"], unattributed=5)])
 
     assert scores.attribution_rate == 0.0
+
+
+def test_asking_for_hybrid_without_it_raises_rather_than_scoring_zero():
+    """The failure mode this guards is silent, not loud. A system that never
+    ingested has no BM25 docstore, and a `--hybrid` run against it would
+    otherwise fall through to an empty result set and publish a hybrid number
+    that is really a vector number, or a zero. Either is a wrong number in a
+    comparison table."""
+    from graphpack.bench.runner import RetrieverUnavailable
+
+    with pytest.raises(RetrieverUnavailable):
+        run_query(FakeSystem(["mhr:a"]), BenchQuery("q", frozenset({"mhr:a"})), hybrid=True)
+
+
+def test_the_hybrid_leg_is_scored_when_it_is_there():
+    """And it is a different retriever, so it can return different documents."""
+    system = FakeSystem(["mhr:vector"], hybrid_docs=["mhr:fused", "mhr:vector"])
+
+    assert run_query(system, BenchQuery("q", frozenset({"mhr:fused"}))).ranked == ("mhr:vector",)
+    assert run_query(system, BenchQuery("q", frozenset({"mhr:fused"})), hybrid=True).ranked == (
+        "mhr:fused",
+        "mhr:vector",
+    )
 
 
 def test_retrieval_that_returns_no_identity_is_counted_as_unattributed():

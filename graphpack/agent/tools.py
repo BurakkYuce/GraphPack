@@ -14,6 +14,11 @@ from dataclasses import dataclass, field
 
 from graphpack.agent.contract import render_cypher
 
+# Re-exported: several modules import `_run` from here. The loop itself lives in
+# `graphpack.loop`, because it belongs to the process rather than to the agent —
+# ingest needs the same one now that a single command can ingest and then query.
+from graphpack.loop import run as _run
+
 logger = logging.getLogger(__name__)
 
 #: Fallback for a pack that declares no lookup query. Matches a canonical
@@ -149,24 +154,6 @@ def traverse(session, pack: str, intent, entity_id: str) -> tuple[list[Found], l
     # draw it rather than guessing a straight line to each result.
     edges = [(entity_id, row.get("via") or intent.name, row["id"]) for row in rows if row.get("id")]
     return found, edges
-
-
-#: One loop for the process, because the engine's clients bind to the loop they
-#: were first used on. asyncio.run creates a loop and closes it on the way out,
-#: so the second search in a process died with "Event loop is closed" — which a
-#: benchmark of 2,255 queries reported as a retrieval score of zero.
-_LOOP = None
-
-
-def _run(coroutine):
-    """Run a coroutine on this process's one long-lived loop."""
-    global _LOOP
-    import asyncio
-
-    if _LOOP is None or _LOOP.is_closed():
-        _LOOP = asyncio.new_event_loop()
-        asyncio.set_event_loop(_LOOP)
-    return _LOOP.run_until_complete(coroutine)
 
 
 def search(system, question: str, top_k: int = 6) -> list[Passage]:

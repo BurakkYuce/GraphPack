@@ -975,12 +975,25 @@ def bench_command(
     pack: str = typer.Argument(..., help="Pack to benchmark."),
     limit: int = typer.Option(0, "--limit", "-n", help="Score only the first N queries."),
     top_k: int = typer.Option(30, "--top-k", help="How deep to retrieve per query."),
+    ingest: bool = typer.Option(
+        False, "--ingest", help="Ingest the corpus first, in this process. Needed for --hybrid."
+    ),
+    hybrid: bool = typer.Option(
+        False, "--hybrid", help="Score the fusion retriever instead of the vector leg alone."
+    ),
 ) -> None:
     """Score the corpus half against a published benchmark's own ground truth.
 
     Reports Hit@k and MRR@10 — the pair MultiHop-RAG reports, and therefore the
     pair worth comparing against. `eval run` is the other measurement: what
     extraction found, against gold a pack derived from its own structured data.
+
+    `--hybrid` needs `--ingest`, and the reason is the engine's rather than
+    ours: its BM25 leg is an in-memory docstore belonging to the object that
+    ingested. A separate `bench` run builds a fresh system, which has vectors
+    and no full-text half — which is why every number this command had reported
+    until now was vector-only. Doing both in one process is what makes the other
+    number exist.
     """
     from graphpack.backbone import session_scope
     from graphpack.bench import BenchError, load_gold, run_benchmark
@@ -1002,6 +1015,29 @@ def bench_command(
         err_console.print("[red]No queries to run.[/red]")
         raise typer.Exit(code=1)
 
+    if hybrid and not ingest:
+        err_console.print(
+            "[red]--hybrid needs --ingest.[/red] The engine's BM25 leg is an in-memory "
+            "docstore owned by the object that ingested, so a fresh system has vectors "
+            "and no full-text half. Scoring it without ingesting would silently measure "
+            "the vector leg again and call it hybrid."
+        )
+        raise typer.Exit(code=1)
+
+    system = build_system(loaded)
+
+    if ingest:
+        from graphpack.ingest import IngestError, ingest_pack
+
+        console.print(f"Ingesting {loaded.name} in this process first...")
+        try:
+            report = ingest_pack(loaded, system=system)
+        except IngestError as exc:
+            err_console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        console.print(f"  {report.documents:,} document(s) in {report.seconds:.1f}s", style="dim")
+
+    # After the ingest, so a fresh corpus is checked rather than the previous one.
     with session_scope() as session:
         try:
             check_gold_is_reachable(session, loaded.name, queries)
@@ -1009,13 +1045,14 @@ def bench_command(
             err_console.print(f"[red]{exc}[/red]")
             raise typer.Exit(code=1) from exc
 
-    system = build_system(loaded)
-    console.print(f"Running {len(queries)} query(ies) at top-{top_k}...")
+    leg = "hybrid (vector + BM25 + graph)" if hybrid else "vector only"
+    console.print(f"Running {len(queries)} query(ies) at top-{top_k}, {leg}...")
     scores = run_benchmark(
         system,
         queries,
         top_k=top_k,
         progress=lambda done, total: console.print(f"  {done}/{total}", style="dim"),
+        hybrid=hybrid,
     )
 
     table = Table("metric", "value", "95% interval")

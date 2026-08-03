@@ -59,6 +59,25 @@ Deviations from the plan get recorded with the reason. Three so far: constraints
 derived from pack declarations instead of per-pack migrations, `RESOLVED_AS`
 edges instead of separate `(:Mention)` nodes, and no BigQuery.
 
+The Gemini round is the sharpest case yet for step 1 — look at the output, not
+the exit code. Three separate faults stacked, every one of them reporting
+success: the extractor validated against LlamaIndex's PRODUCT/MARKET example
+because the engine forwards no constraints, Google's API refused a schema
+carrying properties, and the async path called `asyncio.run` from inside a
+running loop. Each returned "ingested 10 documents" and wrote nothing, because
+`_aextract` catches ValueError and returns an empty list.
+
+Nothing in the test suite could have caught any of them, and the exit code was
+zero every time. What caught them was reading a number that should not have been
+zero and refusing to accept it — and then, at each layer, replicating the
+production call one level down until something finally raised.
+
+The lesson worth keeping is about the swallowed exception rather than the three
+bugs. A library that catches broadly and returns empty converts every downstream
+fault into the same silent symptom. The replacement logs what it caught, and the
+first thing that did after landing was confirm zero failures across 532 chunks —
+which is only information because it could have said otherwise.
+
 The evaluation round found two defects and one thing that only looked like one.
 Both defects were upstream of the number being measured — a contaminated prompt
 and an arbitrary label choice — which is the usual place for them: by the time a

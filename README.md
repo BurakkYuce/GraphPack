@@ -66,11 +66,23 @@ docker compose -f infra/compose.yaml up -d
 uv run graphpack migrate
 uv run graphpack packs validate
 
-# Build the oss backbone: ~3 minutes of downloads, no credentials, no cost.
+# Build the oss backbone. No credentials, no cost, no model — but not quick.
+# fetch: ~8,100 requests at 8 at a time, so however fast pypi.org answers.
+# load:  ~30 minutes, measured. See below.
 uv run graphpack backbone fetch oss
 uv run graphpack backbone load oss
 uv run graphpack backbone check oss
 ```
+
+Half an hour for a load is longer than it should be and the cause is known: the
+edge query matches endpoints without a label, so Neo4j cannot use any of its
+indexes and scans every node per batch. Fixing it means labelling loaded nodes —
+worth doing, not yet done, and written down here rather than left as a surprise.
+
+To try the pipeline without waiting, lower `limit:` on the `top-packages` fetch
+step in `domains/oss/sources.yaml` — it is a pack setting, not a flag, because
+the size of a backbone is a property of the pack rather than of one run. Every
+number in [RESULTS.md](docs/RESULTS.md) uses 8,000.
 
 Always run from the repository root: the engine reads `.env` relative to the
 working directory, and picking up its configuration by accident is a mistake

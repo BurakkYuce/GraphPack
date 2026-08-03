@@ -31,13 +31,22 @@ contract could say so — so the contract grew a knob. That is the shape the
 thesis predicts a new vertical should have: configuration for the domain, and
 occasionally one general capability the domain was the first to need.
 
-**Status:** all phases run; both extraction domains measured on the same setup.
-tr-law scores F1 81.4% (P 97.2%, R 70.0%) over 150 gold edges; oss scores 14.6%
-over 24, and two controlled runs show why — not the model, not the extractor,
-and not backbone coverage, but that 69% of oss's documents mention one package
-while its gold generator needs two. Both extract 100% ontology-
-conforming relations. MultiHop-RAG scores MRR@10 0.759 over 2,255 queries, and
+**Status:** all phases run; both extraction domains measured on the same setup,
+both extracting 100% ontology-conforming relations.
+
+tr-law scores F1 81.4% (P 97.2%, R 70.0%) over 150 gold edges. oss took three
+written diagnoses to become measurable at all: not the model, not the extractor,
+not backbone coverage, but that 69% of its documents mention one package while
+its gold generator needed two. Giving its threads `Issue` nodes — configuration,
+no code, no re-extraction — took the gold set from 24 edges to 135 and the
+interval from ±13 points to ±6. The dependency task still supports no
+conclusion, and both are reported side by side because the gap between them is
+the finding.
+
 `graphpack ablate` puts the graph-versus-retrieval claim at 26.8% recovery.
+MultiHop-RAG scores MRR@10 0.759 over 2,255 queries — which is *not* above the
+paper's published 0.586, because it measures an easier quantity; the two are not
+comparable and [RESULTS.md](docs/RESULTS.md) says exactly why.
 
 - [docs/WRITEUP.md](docs/WRITEUP.md) — what the project claims, what it showed,
   and where it is weak

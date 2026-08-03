@@ -32,9 +32,10 @@ thesis predicts a new vertical should have: configuration for the domain, and
 occasionally one general capability the domain was the first to need.
 
 **Status:** all phases run; both extraction domains measured on the same setup.
-tr-law scores F1 81.4% (P 97.2%, R 70.0%) over 150 gold edges; oss scores 15.4%
-over 22, and the controlled re-run shows the difference is the pack's backbone
-coverage rather than the model or the extractor. Both extract 100% ontology-
+tr-law scores F1 81.4% (P 97.2%, R 70.0%) over 150 gold edges; oss scores 14.6%
+over 24, and two controlled runs show why — not the model, not the extractor,
+and not backbone coverage, but that 69% of oss's documents mention one package
+while its gold generator needs two. Both extract 100% ontology-
 conforming relations. MultiHop-RAG scores MRR@10 0.759 over 2,255 queries, and
 `graphpack ablate` puts the graph-versus-retrieval claim at 26.8% recovery.
 

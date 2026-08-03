@@ -49,7 +49,13 @@ fetch:
   - id: top-packages
     url: https://raw.githubusercontent.com/hugovk/top-pypi-packages/main/top-pypi-packages.min.json
     select: rows
-    limit: 1000
+    # Widened from 1,000 after two rounds of error analysis pointed at the same
+    # thing: half of all package mentions resolved to packages the backbone did
+    # not contain, so five sixths of the corpus produced no scoreable pair. The
+    # ceiling was coverage, not extraction — a controlled re-run on a hosted
+    # model with the ontology enforced moved conformance to 100% and F1 not at
+    # all. Backbones load without a model, so this costs requests and no tokens.
+    limit: 8000
     out: top-packages.jsonl
 
   # One request per package. `keep` trims each response — they run to megabytes

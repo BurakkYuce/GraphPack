@@ -83,11 +83,12 @@ find out. **Two of the three did nothing.** Precision came back identical to
 the decimal, recall halved, and F1 went from 22.2% to 15.4%: inside the same
 interval, and certainly not an improvement.
 
-What is left is the pack. tr-law's backbone is built from the citations in its
-own corpus, so it covers what the documents talk about by construction — all 88
-documents with a resolved entity carried gold. oss's backbone is the top 1,000
-PyPI packages against a corpus that discusses a far wider ecosystem, so only 19
-of 135 did. Everything else was noise around that.
+What is left is the pack — and specifically, whether its documents are nodes.
+tr-law's are: a decision cites a statute, so every citation is a scoreable fact
+about that document, and all 88 documents with a resolved entity carried gold.
+oss's documents are not in its graph, so gold has to come from two related
+packages happening to appear in the same thread. 69% of its threads mention one
+package. Widening the backbone eight-fold was tried and bought two gold edges.
 
 The extractor change was not wasted: both packs now extract 100% conforming
 relations and zero invented entity types, where the local run managed 17.8% and
@@ -106,12 +107,20 @@ Nothing about the system got more certain between those two rows.
 
 ## Three things that were learned the hard way
 
-**A prediction with three causes had one.** The largest single lesson of the
-project came from disbelieving its own write-up: the tr-law/oss gap was
-attributed here to model, ontology enforcement, and extractor, and a controlled
-re-run showed only the pack's design mattered. The other two changed the graph's
-quality without changing its score. Writing the attribution down is what made it
-testable; testing it is what made it wrong.
+**Two diagnoses, both written down here, both wrong.** The tr-law/oss gap was
+attributed to model, ontology enforcement and extractor; a controlled re-run
+showed the first two changed the graph's quality and not its score. What was
+left — oss's backbone covering a tenth of what its corpus discusses — was then
+written down as the remaining cause, and widening that backbone eight-fold moved
+the score by two gold edges.
+
+The actual cause is structural and neither guess came near it: 69% of oss's
+documents mention exactly one package, and its gold generator needs two.
+
+The lesson is not that the guesses were bad. It is that writing an attribution
+down is what makes it a claim somebody can run, and the running is cheap — a
+dollar and twenty minutes, twice — while the wrong belief would have shaped
+every decision after it.
 
 **Gold is scarcer than it looks.** The oss corpus grades itself: for any two
 packages a thread mentions, the backbone already states whether one depends on
@@ -196,10 +205,10 @@ the undifferentiated version sent somebody to the wrong place.
 Stated plainly, because the numbers above are only worth what the caveats
 allow.
 
-- **oss cannot be measured well at all yet.** Twenty-two gold edges on the
-  controlled re-run, ±13 points. The diagnosis is firm — its backbone covers a
-  tenth of what its corpus discusses — and the fix is a wider backbone, which
-  costs nothing but has not been run.
+- **oss cannot be measured this way at all.** Twenty-four gold edges, ±13
+  points, and widening the backbone eight-fold moved that by two. 69% of its
+  documents mention exactly one package, and `backbone_edges` needs two. The
+  fix is a different gold generator, not more data — see RESULTS.md.
 - **The oss measurement is weak on its own terms.** ±13 points on twenty edges.
 - **Article-level citations score nothing.** The extracted mention is `"371.
   maddesinde"` and the backbone identifier is `madde:6100/371`: an article

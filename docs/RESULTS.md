@@ -63,21 +63,50 @@ relates. The funnel from 200 documents to 20 such pairs:
 | documents with ≥2 | 39 |
 | **pairs both co-mentioned and related in the backbone** | **20** |
 
-The dominant loss is the fourth row: **half of the package mentions are packages
-the backbone does not contain.** The backbone is the top 1,000 PyPI packages;
-issue threads from 120 repositories discuss a much wider ecosystem. Resolution
-is working — 95% of package mentions reach *something* — but half reach a
-provisional node, and a provisional node cannot carry gold because the backbone
-states no dependency for it.
+The obvious reading of that funnel is the fourth row: half of the package
+mentions are packages the top-1,000 backbone does not contain, so widen the
+backbone. That was written here as the fix, and then run.
 
-An earlier estimate in this project predicted ~73 gold edges from 200 documents.
-It was wrong by a factor of three, because it assumed mentions would land in the
-top-1000 at roughly the rate they appear. They land at half that.
+**It bought two gold edges.**
 
-The cheapest fix is not a bigger sample but a **wider backbone**: the same 200
-documents against a top-10,000 backbone would convert far more of those 197
-provisional resolutions into gold-bearing ones, at no extraction cost, because
-the backbone is loaded without a model.
+| | top 1,000 | top 8,000 |
+|---|---:|---:|
+| backbone packages | 1,000 | 7,999 |
+| backbone `DEPENDS_ON` edges | 2,437 | **25,367** |
+| mentions resolving to a provisional node | 83 | 69 |
+| documents carrying gold | 19 | 20 |
+| **gold edges** | **22** | **24** |
+| F1 | 15.4% | 14.6% |
+
+Ten times the edges, two more gold. So the ceiling was never backbone coverage,
+and one query says what it is instead:
+
+```
+documents mentioning exactly 1 backbone package    96
+                            2                      24
+                            3                       9
+                            4 or more              10
+```
+
+**Sixty-nine percent of the corpus discusses one package.** `backbone_edges`
+needs a document that mentions *two* entities the backbone relates, and a GitHub
+issue thread is about one library having one problem. No backbone makes that
+corpus produce pairs it does not contain.
+
+This is the difference between the two packs, and it is not about domain
+difficulty. tr-law scores 150 gold edges from the same 200 documents because its
+documents *are* nodes: a decision cites a statute, so every citation is a
+scoreable fact about that document. oss's documents are not in its graph, so gold
+has to come from coincidence — two related packages happening to appear in the
+same thread — and coincidence is rare.
+
+**The generator, not the corpus, is what to change.** `document_edges` scores a
+document against what the backbone says it points at; `backbone_edges` scores a
+pair against a document that mentions both. The first is available whenever
+documents are entities. oss's are not, today: its corpus is issue threads and its
+backbone is packages, with no edge between them. Giving oss an `Issue` node per
+thread with `MENTIONS_PACKAGE` edges from its metadata would make the strong
+generator available to it — that is a pack change, and it is untested.
 
 ### Where the misses come from
 

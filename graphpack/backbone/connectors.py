@@ -73,9 +73,7 @@ def check_connector(name: str, config: dict[str, Any], where: str) -> None:
         )
     missing = [key for key in CONNECTORS[name][1] if not config.get(key)]
     if missing:
-        raise ConnectorError(
-            f"{where}: source '{name}' needs config key(s) {missing}"
-        )
+        raise ConnectorError(f"{where}: source '{name}' needs config key(s) {missing}")
 
 
 def expand(config: dict[str, Any]) -> dict[str, Any]:
@@ -86,6 +84,7 @@ def expand(config: dict[str, Any]) -> dict[str, Any]:
     not set expands to empty rather than raising, so the reader reports its own
     "no credentials" error — which is more use than ours would be.
     """
+
     def _one(value: Any) -> Any:
         if isinstance(value, str):
             return _ENV.sub(lambda m: os.environ.get(m.group(1), ""), value)
@@ -132,8 +131,6 @@ def fetch_rows(name: str, config: dict[str, Any]) -> list[dict[str, Any]]:
     except Exception as exc:
         raise ConnectorError(f"source '{name}' failed — {type(exc).__name__}: {exc}") from exc
 
-    rows = [
-        {"text": document.text, **(document.metadata or {})} for document in documents or []
-    ]
+    rows = [{"text": document.text, **(document.metadata or {})} for document in documents or []]
     logger.info("source '%s': %d document(s) -> %d row(s)", name, len(documents or []), len(rows))
     return rows

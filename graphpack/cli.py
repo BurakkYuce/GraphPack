@@ -508,9 +508,9 @@ def inspect_command(
         declared = set(compile_ontology(load_pack(pack).ontology_path).relations)
 
     with session_scope() as session:
-        shape = inspect_entities(session, sample_size=samples)
-        relationships = relationship_shape(session, declared)
-        chunks = chunk_shape(session)
+        shape = inspect_entities(session, sample_size=samples, pack=pack)
+        relationships = relationship_shape(session, declared, pack=pack)
+        chunks = chunk_shape(session, pack=pack)
 
     if not shape.total:
         console.print("[yellow]No extracted entities in the graph.[/yellow]")

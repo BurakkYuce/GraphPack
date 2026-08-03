@@ -253,6 +253,28 @@ corpus:
       author: "{author}"
       state: "{state}"
       created_at: "{created_at}"
+
+    # Metadata is part of the prompt: LlamaIndex prepends every key to the chunk
+    # as `key: value` before the model reads it, so a field kept for bookkeeping
+    # is a field extraction treats as document content. That is where the entity
+    # `pack: oss`, typed PACKAGE, came from — and where `URL` and `DATE` entity
+    # noise comes from, neither of which the ontology declares.
+    #
+    # These three are bookkeeping. They stay queryable in the store and are
+    # excluded from both the model's view and the embedding's.
+    #
+    # Three are kept, deliberately. `title` and `repo` are genuine context for
+    # what the thread is about. `author` is too, and is more arguable: it is a
+    # GitHub handle rather than prose, but PERSON is a type this ontology
+    # declares and "who opened this" is a fact about the document rather than
+    # about our bookkeeping. It stays, so this change has one variable.
+    #
+    # Left unapplied until now on purpose, so the committed configuration
+    # matched the run that produced the published numbers. Re-running costs
+    # minutes on a hosted model rather than the ten hours it cost locally, so
+    # that reason has expired.
+    hide_from_model: [url, state, created_at]
+
     where:
       # A closed issue with an empty body is a duplicate marker, not a document.
       body: {matches: "\\S"}

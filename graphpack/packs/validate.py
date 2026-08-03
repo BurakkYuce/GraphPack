@@ -219,14 +219,41 @@ def _check_document_ids_match_the_corpus(task, sources, result: ValidationResult
         return
 
     corpus_ids = {spec.id for spec in sources.corpus if spec.id}
-    if not document_ids & corpus_ids:
-        result.errors.append(
+    if document_ids & corpus_ids:
+        return  # the same template, character for character; nothing to say
+
+    nodes = ", ".join(sorted(document_ids))
+    documents = ", ".join(sorted(corpus_ids))
+
+    # Two strengths, because only one of these is certain.
+    #
+    # Different namespaces cannot match: `issue:{slug}#{number}` and
+    # `gh:{slug}#{number}` never produce a common string, so the join is empty
+    # by arithmetic and this is an error.
+    #
+    # The same namespace with differently-written templates *might* match —
+    # `{id}` and `{id|trim}` render alike for clean input — so it is a warning.
+    # Erroring there would block a pack that is correct, and this check exists
+    # to prevent a silent empty gold set, not to insist on one spelling.
+    if _prefixes(document_ids) & _prefixes(corpus_ids):
+        result.warnings.append(
             f"eval task '{task.name}' joins {task.source_label} nodes to ingested documents "
-            f"on id, but no {task.source_label} step uses a corpus id template: nodes are "
-            f"built as {', '.join(sorted(document_ids))} and documents as "
-            f"{', '.join(sorted(corpus_ids))}. The join would match nothing and the gold "
-            f"set would come back empty rather than wrong."
+            f"on id, and the two templates are not identical: nodes are built as {nodes}, "
+            f"documents as {documents}. They may still render alike. If they do not, the "
+            f"gold set comes back empty rather than wrong — check it after the next load."
         )
+        return
+
+    result.errors.append(
+        f"eval task '{task.name}' joins {task.source_label} nodes to ingested documents "
+        f"on id, but they are built in different namespaces: nodes as {nodes}, documents "
+        f"as {documents}. No id can satisfy both, so the join matches nothing and the gold "
+        f"set comes back empty rather than wrong."
+    )
+
+
+def _prefixes(templates: set[str]) -> set[str]:
+    return {_prefix(t) for t in templates}
 
 
 def _label_of(id_template: str, sources) -> str:

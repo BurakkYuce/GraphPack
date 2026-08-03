@@ -359,6 +359,74 @@ def test_the_document_shaped_generator_passes_the_same_check(domains):
     assert not [e for e in result.errors if "eval task" in e]
 
 
+def _document_edges_pack(domains, node_id, corpus_id):
+    domains(
+        "widgets",
+        sources=textwrap.dedent(
+            f"""\
+            normalize:
+              slug: [lower]
+            fetch:
+              - id: a
+                url: https://example.invalid/a.json
+                out: a.jsonl
+            load:
+              - source: a.jsonl
+                node: {{label: Doc, id: "{node_id}"}}
+              - source: a.jsonl
+                node: {{label: Widget, id: "w:{{n}}"}}
+              - source: a.jsonl
+                edge: {{type: CITES, from: "{node_id}", to: "w:{{n}}"}}
+            corpus:
+              - source: a.jsonl
+                id: "{corpus_id}"
+                text: "{{body}}"
+            """
+        ),
+        evaluation=textwrap.dedent(
+            """\
+            tasks:
+              - name: t
+                generator: document_edges
+                relation: CITES
+                backbone_relation: CITES
+                source_label: Doc
+                endpoint_label: Widget
+            holdout: 0.0
+            """
+        ),
+    )
+    return validate_pack("widgets")
+
+
+def test_document_nodes_in_another_namespace_than_the_corpus_is_an_error(domains):
+    """The join is `document.id = chunk.ref_doc_id`, string equality. Different
+    namespaces can never satisfy it, so the gold set comes back empty — which is
+    what a corpus with genuinely no gold also reports, after however long
+    extraction took."""
+    result = _document_edges_pack(domains, "issue:{n}", "d:{n}")
+
+    assert not result.ok
+    assert any("different namespaces" in e for e in result.errors)
+
+
+def test_the_same_namespace_written_differently_is_a_note_not_a_failure(domains):
+    """`{n}` and `{n|slug}` may well render alike, and blocking a correct pack is
+    not what this check is for. It exists to prevent a silent empty gold set, not
+    to insist on one spelling."""
+    result = _document_edges_pack(domains, "d:{n|slug}", "d:{n}")
+
+    assert result.ok, result.errors
+    assert any("not identical" in w for w in result.warnings)
+
+
+def test_identical_templates_say_nothing_at_all(domains):
+    result = _document_edges_pack(domains, "d:{n}", "d:{n}")
+
+    assert result.ok, result.errors
+    assert not [w for w in result.warnings if "ingested documents" in w]
+
+
 def test_a_malformed_eval_file_is_an_error_not_silence(domains):
     """These used to be swallowed. `_check_eval_shape` caught EvalError and
     returned, with a comment saying the check that owns eval.yaml would report it

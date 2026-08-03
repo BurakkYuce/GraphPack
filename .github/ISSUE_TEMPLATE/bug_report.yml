@@ -1,0 +1,98 @@
+name: Bug report
+description: Something produced a wrong number, a wrong error, or no error at all
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A count that looks wrong is a good bug report here. Most of the real
+        defects in this repository were found by a number being an order of
+        magnitude off rather than by anything raising.
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Which stage
+      options:
+        - packs validate
+        - backbone fetch / load / check
+        - ingest (chunk, embed, extract)
+        - resolve
+        - validate-triples
+        - eval
+        - bench
+        - ask / ask-all
+        - ablate
+        - migrate
+        - doctor
+        - other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: The command you ran
+      render: shell
+      placeholder: uv run graphpack eval oss
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what you got
+      description: >
+        Counts where you have them. "Expected roughly 150 gold edges, got 0" is
+        far more actionable than "eval is broken" — the two have completely
+        different causes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The full output, including any traceback.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: graphpack doctor
+      description: >
+        Output of `uv run graphpack doctor`. It reports which services and
+        models are reachable, which is the first thing that explains an empty
+        result. Redact anything it prints that you would rather not share.
+      render: text
+
+  - type: input
+    id: pack
+    attributes:
+      label: Pack
+      placeholder: oss, tr-law, bench-wiki, or your own
+
+  - type: input
+    id: provider
+    attributes:
+      label: Model provider and model
+      description: >
+        Extraction behaviour differs a great deal between providers — see
+        docs/ENGINE.md. Say "none" if the stage does not use a model.
+      placeholder: ollama / llama3.1:8b
+
+  - type: input
+    id: environment
+    attributes:
+      label: OS, Python, hardware
+      placeholder: macOS 15, Python 3.12, M4 16 GB
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: The engine checkout is at the pinned commit and `git -C ../flexible-graphrag status --porcelain` prints nothing
+        - label: I ran from the repository root

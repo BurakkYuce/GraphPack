@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/BurakkYuce/GraphPack/security/advisories/new
+    about: Report privately. Please do not open a public issue for something exploitable.
+  - name: How the engine behaves
+    url: https://github.com/BurakkYuce/GraphPack/blob/main/docs/ENGINE.md
+    about: >
+      Silent extraction failures, an empty graph after a successful-looking run, BM25 missing
+      across a process boundary — several of these are documented engine behaviours rather than
+      GraphPack bugs. Worth reading first.
+  - name: What the numbers mean
+    url: https://github.com/BurakkYuce/GraphPack/blob/main/docs/RESULTS.md
+    about: Every measurement with the command that produced it, and what each one does not show.

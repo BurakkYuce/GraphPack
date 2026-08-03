@@ -1,0 +1,83 @@
+name: Pack contract gap
+description: Adding a domain required Python, or a knob that should exist does not
+labels: [contract]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the report the project most wants.
+
+        The whole claim is that adding a vertical costs configuration, not code.
+        Every time that turns out to be false, either the contract is missing a
+        general capability or the capability exists and is undocumented — and
+        both are defects. `bench-wiki` needed eight lines of GraphPack code for
+        one new knob (`extract: false`), and that is the shape a good outcome
+        here looks like: general, not domain-specific.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What your pack needed to express
+      description: >
+        The domain fact, not the implementation. "Documents arrive paginated
+        behind a cursor" rather than "add a while loop to fetch.py".
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What you tried in YAML
+      render: yaml
+      description: >
+        Including things that nearly worked. Where the existing vocabulary comes
+        close is usually where the knob belongs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: blocked
+    attributes:
+      label: Why it did not work
+      description: >
+        The error, the silence, or the wrong result. If it produced a plausible
+        wrong answer rather than an error, say so — that is the more serious
+        version.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: file
+    attributes:
+      label: Which contract file
+      options:
+        - pack.yaml
+        - ontology.ttl
+        - sources.yaml (normalize / fetch / derive / load / corpus)
+        - resolve.yaml
+        - eval.yaml
+        - retrieval.yaml
+        - aliases.csv / questions.jsonl / checks.cypher
+        - across several
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Your reading of it
+      options:
+        - The capability is missing and would be general
+        - The capability exists and I could not find it documented
+        - The capability exists and behaved differently from its documentation
+        - It is genuinely domain-specific and probably should not be in the contract
+    validations:
+      required: true
+
+  - type: textarea
+    id: domain
+    attributes:
+      label: The domain
+      description: >
+        Enough for someone to judge how general the request is. A knob one
+        domain needs is worth adding; a knob one *source* needs usually is not.

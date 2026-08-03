@@ -526,10 +526,59 @@ of ±13. Nothing about the system got more certain — the measurement did.
 - **Chunks are reduced to articles.** Several chunks of one article are one
   result, taking the rank of its best chunk. Counting chunks would make Hit@10 a
   measure of how finely an article was split.
-- **No comparison to the published table is made here.** The paper's numbers
-  depend on its embedding model, chunk size and whether a reranker ran; quoting
-  ours beside theirs without matching that would be a comparison in appearance
-  only. What the pack establishes is that the comparison is now one run away.
+- **No comparison to the published table is made here**, and the reason is
+  worse than it looked. See the next section.
+
+### The published table, and why our number is not above it
+
+This document has said twice that a comparison to MultiHop-RAG's own numbers was
+"one run away" — match the embedding model and the reranker and the two tables
+line up. Reading the paper says otherwise. Here is what it reports
+([arXiv:2401.15391](https://arxiv.org/abs/2401.15391), Table 5), and here is
+ours:
+
+| | MRR@10 | Hits@10 | Hits@4 |
+|---|---:|---:|---:|
+| ada-002, no reranker | 0.4203 | 0.6381 | 0.5040 |
+| bge-large-en-v1.5, no reranker | 0.4298 | 0.6718 | 0.5221 |
+| voyage-02 + bge-reranker-large — their best | **0.5860** | 0.7467 | 0.6625 |
+| **this project, `nomic-embed-text`, no reranker** | **0.759** | 0.977 | 0.909 |
+
+A number 30% above the best published row, from a smaller open embedding model
+and no reranker, is not a result. It is a sign that two quantities have been
+given the same name, and they have — in two ways, both ours:
+
+**They score chunks; we score articles.** Our runner deliberately reduces
+retrieved chunks to the articles they came from and ranks those, which is
+documented above as the right thing for the question we were asking. It also
+makes the task easier: thirty retrieved chunks collapse to far fewer distinct
+articles, and asking whether a gold *article* is among them is a weaker demand
+than asking whether a gold *chunk* is.
+
+**Their Hit@K is recall over the evidence set; ours is "found at least one".**
+The paper defines it as "the fraction of evidence that appears in the top-K
+retrieved set". A query resting on four articles scores 0.25 for them when one
+is found, and 1.0 for us. A test in this repository asserted the opposite —
+that ours was "the quantity the paper reports" — and that comment is now
+corrected rather than deleted.
+
+So the honest statement is not that this system retrieves better than the
+published baselines. It is that **these numbers measure an easier task and are
+not comparable**, and every earlier sentence in this repository implying the gap
+was one embedding model wide was wrong.
+
+**What a real comparison needs**, now specific rather than gestured at:
+
+1. *Chunk-level gold.* The data supports it — each evidence entry in
+   `queries.jsonl` carries its `fact` sentence, so a gold chunk is one whose
+   text contains that sentence. The pack's derive step currently keeps only the
+   article, which is what made article-level scoring the natural thing to build.
+2. *Their Hit@K.* Recall over the evidence set rather than any-one-hit.
+3. *Their retrieval depth*, 20 chunks rather than our 30.
+4. *A matching embedding model*, and optionally `bge-reranker-large`.
+
+The first three are code and cost nothing to run. Only the fourth needs anything
+this project does not have.
 
 ### The null queries measure nothing, and that is worth saying
 
@@ -626,8 +675,11 @@ indexed, which is why it is the measurement above.
   are ingested, so the 5.9% is mostly sampling. Ingesting the full corpus would
   make it a second clean data point beside bench-wiki's 26.8%.
 - **Hybrid retrieval.** Every benchmark number above is the vector leg alone.
-- **The published MultiHop-RAG table.** See above: matching its setup is a
-  separate run, not a paragraph.
+- **The published MultiHop-RAG table.** Not a run away, as this document twice
+  claimed — the metrics differ. Ours scores articles where the paper scores
+  chunks, and our Hit@K is "found at least one" where the paper's is recall over
+  the evidence set. See [The published table](#the-published-table-and-why-our-number-is-not-above-it)
+  for what closing that actually requires.
 - **`strict_schema` true versus false.** The sweep this phase planned is not
   worth running: on the dynamic extractor the setting is inert, and the section
   above is the evidence.

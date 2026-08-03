@@ -60,9 +60,15 @@ def test_hit_at_k_looks_only_at_the_first_k():
 
 
 def test_any_one_gold_article_is_a_hit():
-    """The benchmark's questions rest on several articles. Hit@k asks whether
-    retrieval found *an* answer, which is the quantity the paper reports —
-    recall over the whole evidence set is a different one."""
+    """The benchmark's questions rest on several articles, and this counts a
+    query as a hit when retrieval found any one of them.
+
+    An earlier version of this docstring said that was "the quantity the paper
+    reports". It is not, and reading the paper is what settled it: MultiHop-RAG
+    defines Hit@K as "the fraction of evidence that appears in the top-K
+    retrieved set" — recall over the evidence set, which is the stricter
+    quantity this test's own last line used to call different. Our number is
+    the easier one, and RESULTS.md now says so beside the published table."""
     assert result(["b"], ["a", "b", "c"]).hit_at(1) is True
 
 

@@ -68,9 +68,18 @@ Full numbers, with the commands that produce them, are in
 
 **The benchmark works and is well measured.** MultiHop-RAG, all 2,556 queries:
 MRR@10 **0.759**, Hit@1 0.631, Hit@10 0.977, intervals ±2 points. Vector
-retrieval only — the engine's BM25 leg does not survive a process boundary — and
-no comparison to the published table is claimed, because matching its embedding
-model and reranking is a separate run.
+retrieval only, because the engine's BM25 leg does not survive a process
+boundary — `bench --ingest --hybrid` now runs both in one process, which is what
+makes the other number obtainable.
+
+**That 0.759 is not comparable to the paper's 0.586, and this repository said
+otherwise twice.** Both earlier versions claimed the gap was one embedding model
+and a reranker away. Reading the paper shows the metrics differ: it scores
+*chunks* where we reduce chunks to articles and score those, and its Hit@K is
+recall over a query's whole evidence set where ours asks whether any one piece
+was found. Both differences make our task easier, which is the only reasonable
+reading of a small open embedding model with no reranker beating the published
+best by 30%. RESULTS.md carries the table and what a real comparison would take.
 
 **Extraction is measured in two domains now.** tr-law: F1 **81.4%**, precision
 97.2%, over 150 gold edges, interval ±5. oss took longer to become measurable at

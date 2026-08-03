@@ -93,12 +93,14 @@ graphpack ingest PACK [-n N]        run the corpus through the engine
 graphpack inspect [PACK]            report what extraction wrote
 graphpack resolve PACK              link mentions to canonical identifiers
 graphpack validate-triples PACK     check relations against the ontology
+graphpack eval PACK                 score extraction against self-labelled gold
 graphpack ask PACK QUESTION         answer by walking the graph
 graphpack ablate PACK               how much of a graph answer is in the text
 graphpack bench PACK                Hit@k / MRR@10 against published gold
 graphpack ask-all PACK              run the pack's whole question set
 graphpack viz PACK --id ID          write the run as a self-contained page
 graphpack doctor                    check models and services are reachable
+graphpack version                   print the version
 ```
 
 `graphpack packs schema oss` shows what the engine will actually extract with:
@@ -146,6 +148,13 @@ so a pack called `oss` does not trip on "cross" or "across".
 
 ## Writing a pack
 
+**Start by copying [`domains/_template/`](domains/_template/)** — a working pack
+for a made-up domain, every file commented with what each field does and what
+goes wrong when you get it subtly right. It is a real pack, so `packs validate`
+runs over it in CI: when the contract changes, the template breaks alongside the
+other packs and has to be fixed. The rest of this section is the overview; the
+template is the reference.
+
 ```
 domains/<name>/
   pack.yaml         identity, extraction knobs, store targets   (required)
@@ -155,6 +164,8 @@ domains/<name>/
   resolve.yaml      mention → canonical id rules                (phase 3)
   eval.yaml         gold generator selection                    (phase 4)
   retrieval.yaml    intent → Cypher template                    (phase 6)
+  aliases.csv       surface forms no rule reaches               (phase 3)
+  questions.jsonl   QA set for the agent runner                 (phase 6)
 ```
 
 `sources.yaml` says where records come from and what they become:

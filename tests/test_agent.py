@@ -325,3 +325,50 @@ def test_the_prompt_still_works_without_a_routed_intent():
 
     assert "the graph" in llm.prompt
     assert "pypi:meltano" in llm.prompt
+
+
+# ----------------------------------------------------------------------
+# What gets looked up
+# ----------------------------------------------------------------------
+
+
+def test_a_distinctive_single_token_is_not_crowded_out_by_word_runs():
+    """The bug this pins answered a question about the wrong package.
+
+    Word runs are generated before single tokens, because an entity is often
+    named in several words. A seven-word question generates thirteen runs, and
+    with a flat cap of sixteen they consumed the whole budget: "What bugs have
+    been reported that mention httpx?" produced no candidate named `httpx`.
+    Lookup then fuzzy-matched the word *reported* to the package `reporters-db`
+    and the agent answered about that.
+    """
+    from graphpack.agent.loop import _candidates
+
+    candidates = _candidates("What bugs have been reported that mention httpx?")
+
+    assert "httpx" in candidates
+    # ...and the runs are still there, and still first.
+    assert "that mention httpx" in candidates
+    assert candidates.index("that mention httpx") < candidates.index("httpx")
+
+
+def test_a_hyphenated_identifier_survives_a_long_question():
+    from graphpack.agent.loop import _candidates
+
+    candidates = _candidates("Which packages live in the same repository as google-cloud-storage?")
+
+    assert "google-cloud-storage" in candidates
+
+
+def test_a_quoted_span_is_always_kept():
+    """Backticks are the strongest signal a question gives about what it names,
+    so they are taken off the budget before anything competes for it."""
+    from graphpack.agent.loop import CANDIDATE_LIMIT, _candidates
+
+    candidates = _candidates(
+        "In the matter of `2025/717` what did the chamber decide about the claim "
+        "for severance and the notice period and the rest of it"
+    )
+
+    assert candidates[0] == "2025/717"
+    assert len(candidates) <= CANDIDATE_LIMIT

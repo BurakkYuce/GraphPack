@@ -231,37 +231,50 @@ def _critique(recorder: Recorder, session, pack: str, gathered: Gathered) -> Non
 # ----------------------------------------------------------------------
 
 
+#: How many substrings of one question are worth a lookup each.
+CANDIDATE_LIMIT = 16
+
+
 def _candidates(question: str) -> list[str]:
     """Substrings of the question worth looking up.
 
     Quoted spans first — a question that says `urllib3` in backticks is naming
-    something. Then bare tokens that survive the noise list, and identifier-like
+    something. Then runs of words, then bare tokens, including identifier-like
     runs such as 2025/717 or 4857 that a word tokeniser would break apart.
-    """
-    found: list[str] = []
 
-    for span in re.findall(r"[`\'\"]([^`\'\"]{2,60})[`\'\"]", question):
-        found.append(span.strip())
+    The budget is what makes the ordering delicate. Word runs come first because
+    an entity is often named in several — "Sendikalar Kanunu" is one statute and
+    neither half identifies anything — but a seven-word question generates
+    thirteen runs, and with a flat cap they crowded out every single token.
+    "What bugs have been reported that mention httpx?" produced no candidate
+    named `httpx` at all: the lookup fell through to fuzzy matching on the word
+    *reported*, resolved it to the package `reporters-db`, and answered about
+    that instead.
+
+    So single tokens are reserved a share of the budget rather than appended to
+    whatever is left. Runs still go first, and the whole list is tried, so the
+    ordering only decides what survives the cap.
+    """
+    quoted = [s.strip() for s in re.findall(r"[`\'\"]([^`\'\"]{2,60})[`\'\"]", question)]
 
     tokens = re.findall(r"\d{4}/\d+|\b\d{3,4}\b|[^\W\d_][\w.\-]{1,}", question, re.UNICODE)
-    # Runs of two and three words before the single words, because an entity is
-    # often named in several: "Sendikalar Kanunu" is one statute and neither
-    # half of it identifies anything. Longest first, so the more specific
-    # candidate is tried before the vaguer one.
-    for size in (3, 2):
-        for start in range(len(tokens) - size + 1):
-            phrase = " ".join(tokens[start : start + size])
-            if any(t.lower() not in _NOISE for t in tokens[start : start + size]):
-                found.append(phrase)
-    for token in tokens:
-        if token.lower() not in _NOISE:
-            found.append(token)
+    runs = [
+        " ".join(tokens[start : start + size])
+        for size in (3, 2)
+        for start in range(len(tokens) - size + 1)
+        if any(t.lower() not in _NOISE for t in tokens[start : start + size])
+    ]
+    singles = [t for t in tokens if t.lower() not in _NOISE]
+
+    budget = max(CANDIDATE_LIMIT - len(quoted), 0)
+    kept_singles = singles[: max(budget // 2, 1)] if singles else []
+    kept_runs = runs[: budget - len(kept_singles)]
 
     seen: list[str] = []
-    for item in found:
+    for item in [*quoted, *kept_runs, *kept_singles]:
         if item and item not in seen:
             seen.append(item)
-    return seen[:16]
+    return seen[:CANDIDATE_LIMIT]
 
 
 def _structured_answer(gathered: Gathered) -> str:

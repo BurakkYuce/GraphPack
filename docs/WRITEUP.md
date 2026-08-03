@@ -98,17 +98,27 @@ packages it does not contain. 200 documents, 3,528 entities and 391 package
 mentions produced 20 scoreable pairs. An early estimate said 73. The fix is a
 wider backbone, which costs nothing — backbones load without a model.
 
-**The ontology does not constrain extraction.** Not partly: 17.8% of extracted
-relations conform to it, and 58% of entity labels are types it never declares.
-Two engine facts compound — triple constraints are never forwarded to the
-extractor, and Ollama has to run on the dynamic extractor because the schema
-extractor returns nothing on it, and the dynamic extractor invents types by
-design. `strict_schema: true` is set and inert.
+**The ontology constrains extraction only if you make it.** The oss run put
+17.8% of relations and 42% of entity labels inside the ontology; the tr-law run
+put 100% of both. `strict_schema: true` was set in each.
 
-This is the layer's clearest justification. `validate-triples` is the only thing
-in the stack that ever compares extraction to the schema it was given. Without
-it, a graph 82% of whose relations violate its own ontology looks exactly like
-one that does not.
+Two independent reasons the first number is what it is. On the dynamic
+extractor — where Ollama has to run, because the schema extractor returns
+nothing on it — no schema constrains anything, and the model invents types
+freely. And on the schema extractor the engine forwards no
+`kg_validation_schema` at all, so LlamaIndex validates against its own
+PRODUCT / MARKET example and discards everything a real pack produces. That
+second one does not degrade the graph; it empties it, silently.
+
+So the layer earns its place twice over. It installs the pack's own constraints
+on the extractor, which is what turns 17.8% into 100%. And `validate-triples`
+remains the only thing in the stack that ever checks the result — without it, a
+graph 82% of whose relations violate its own ontology looks exactly like one
+that does not.
+
+The 100% is by construction, not by the model being better: what does not
+conform is discarded before it is written. That buys precision (97.2%) and
+spends recall (70.0%). Which trade is right is now a measurable question.
 
 **Extraction is essentially the whole cost — locally.** Two ingests on the same
 machine: 200 documents *with* extraction, 10 h 37 m. 609 documents and 8,927

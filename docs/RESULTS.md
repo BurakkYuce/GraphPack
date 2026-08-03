@@ -29,10 +29,14 @@ uv run graphpack eval oss
 ### The headline, and why it is not a headline
 
 ```
-dependencies (backbone_edges: DEPENDS_ON)
+dependencies (backbone_edges: DEPENDS_ON)      # ollama, dynamic extractor
   P 17.6% [8.3–33.5]   R 30.0% [14.5–51.9]   F1 22.2%
   tp 6, fp 28, fn 14 — 20 gold edges, 17 of 147 documents carried gold
 ```
+
+This run was later repeated on the hosted model with the ontology enforced. The
+score did not improve; see "The controlled comparison" below. The analysis that
+follows is what still holds, and it holds for both runs.
 
 Twenty gold edges. Precision could be anywhere from 8% to 34% and the data
 cannot distinguish those. The right reading is not "the system scores 22%" but
@@ -205,24 +209,51 @@ of the ten sampled misses is the same shape — *"both ends resolved, nothing
 between them"*. The model named the decision and named the statute and did not
 say the decision cites it. Recall is where a strict schema is paid for.
 
-### What changed, and what it cost
+### The controlled comparison — and it refutes what this section first claimed
 
-| | oss (ollama, dynamic) | tr-law (gemini, schema) |
+The obvious reading of tr-law's 81.4% against oss's 22.2% is that the hosted
+model and the enforced ontology did it. That reading was written here, and then
+tested: oss was re-run on tr-law's exact setup — same model, same schema
+extractor, same installed constraints, same 200 documents, same seed.
+
+| oss | ollama, dynamic | gemini, schema |
 |---|---|---|
-| documents | 200 | 200 |
-| chunks | 611 | 532 |
-| wall clock | 10 h 37 m | **10 m 19 s** |
-| relations conforming to the ontology | 17.8% | **100%** |
+| wall clock | 10 h 37 m | **4 m 52 s** |
+| relations conforming | 17.8% | **100%** |
 | entity labels the ontology declares | 42% | **100%** |
-| gold edges | 20 | 150 |
-| F1 | 22.2% [±13] | **81.4%** [±5] |
+| gold edges | 20 | 22 |
+| precision | 17.6% | 17.6% |
+| recall | 25.0% | 13.6% |
+| **F1** | **22.2%** [±13] | **15.4%** [±13] |
 
-The two runs are not a controlled comparison and should not be read as one:
-different domain, different language, different extractor, different model.
-What they do establish is that the earlier numbers were bounded by the setup
-rather than by the idea — and which parts of the setup.
+**The extractor change bought conformance and not one point of F1.** Precision
+is identical to the decimal. Recall halved — the strict schema discards the
+near-misses the dynamic extractor was credited for. The two F1 figures are
+inside each other's intervals, so the honest statement is that changing the
+model and enforcing the ontology *did not measurably improve the score on this
+pack*, and may have cost recall.
 
-Extraction cost about **$0.60** at `gemini-3.5-flash-lite` rates.
+So the tr-law/oss gap is not the model and not the extractor. It is the pack:
+
+| | oss | tr-law |
+|---|---|---|
+| backbone built from | published metadata, top 1,000 packages | the corpus's own citations |
+| documents with a resolved backbone entity | 135 | 88 |
+| …of those, carrying gold | **19** | **88** |
+| gold edges | 22 | 150 |
+
+tr-law's backbone covers its corpus by construction — every statute a decision
+cites is in the backbone because that is where the backbone came from. oss's
+covers a tenth of what its corpus discusses, so five sixths of its documents
+have entities but no scoreable pair. That was the finding oss's own error
+analysis pointed at, and the controlled run is what confirms it was the whole
+story rather than one of three.
+
+What the extractor change *did* buy is a graph that means what its ontology
+says: 100% of relations conforming, zero invented entity types, on both packs.
+That is worth having and it is not visible in F1.
+
+Extraction cost about **$0.60** per pack at `gemini-3.5-flash-lite` rates.
 
 ### Article citations score nothing, for a structural reason
 

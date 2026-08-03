@@ -77,11 +77,21 @@ tr-law: F1 **81.4%**, precision 97.2%, over 150 gold edges, interval ±5. oss:
 F1 22.2% over *twenty* gold edges, interval ±13 — a number that supports no
 conclusion about the system and is not offered as one.
 
-The gap is not the model being better at Turkish. It is three things that were
-wrong in the oss run and right in the tr-law one: the backbone covered the
-corpus instead of a tenth of it, the ontology was enforced during extraction
-instead of ignored, and the extractor was one the provider can actually drive.
-Each is in [RESULTS.md](RESULTS.md) with the measurement that showed it.
+That gap looked like it had three causes — a better model, an enforced
+ontology, a working extractor — so oss was re-run on tr-law's exact setup to
+find out. **Two of the three did nothing.** Precision came back identical to
+the decimal, recall halved, and F1 went from 22.2% to 15.4%: inside the same
+interval, and certainly not an improvement.
+
+What is left is the pack. tr-law's backbone is built from the citations in its
+own corpus, so it covers what the documents talk about by construction — all 88
+documents with a resolved entity carried gold. oss's backbone is the top 1,000
+PyPI packages against a corpus that discusses a far wider ecosystem, so only 19
+of 135 did. Everything else was noise around that.
+
+The extractor change was not wasted: both packs now extract 100% conforming
+relations and zero invented entity types, where the local run managed 17.8% and
+42%. It buys a graph that means what its ontology says. It does not buy score.
 
 **And the graph answers what retrieval does not.** On bench-wiki, where every
 article is indexed, 26.8% of a traversal's answer is recoverable from the top-30
@@ -95,6 +105,13 @@ same interval arithmetic, 2,255 measurements against 20: ±2 points against ±13
 Nothing about the system got more certain between those two rows.
 
 ## Three things that were learned the hard way
+
+**A prediction with three causes had one.** The largest single lesson of the
+project came from disbelieving its own write-up: the tr-law/oss gap was
+attributed here to model, ontology enforcement, and extractor, and a controlled
+re-run showed only the pack's design mattered. The other two changed the graph's
+quality without changing its score. Writing the attribution down is what made it
+testable; testing it is what made it wrong.
 
 **Gold is scarcer than it looks.** The oss corpus grades itself: for any two
 packages a thread mentions, the backbone already states whether one depends on
@@ -179,11 +196,10 @@ the undifferentiated version sent somebody to the wrong place.
 Stated plainly, because the numbers above are only worth what the caveats
 allow.
 
-- **The two domains are not a controlled comparison.** oss ran on a local model
-  with the dynamic extractor; tr-law on a hosted one with the schema extractor.
-  Domain, language, model and extractor all differ at once, so the two F1
-  figures cannot be attributed to any one of them. Re-running oss on tr-law's
-  setup would settle it and costs about a dollar.
+- **oss cannot be measured well at all yet.** Twenty-two gold edges on the
+  controlled re-run, ±13 points. The diagnosis is firm — its backbone covers a
+  tenth of what its corpus discusses — and the fix is a wider backbone, which
+  costs nothing but has not been run.
 - **The oss measurement is weak on its own terms.** ±13 points on twenty edges.
 - **Article-level citations score nothing.** The extracted mention is `"371.
   maddesinde"` and the backbone identifier is `madde:6100/371`: an article

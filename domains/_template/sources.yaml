@@ -17,10 +17,13 @@
 # normalize — named pipelines, applied as {field|pipeline}
 # ----------------------------------------------------------------------
 #
-# Available operations:
+# Available operations — these five and no others:
 #   lower / upper / strip                  no arguments
-#   regex_replace: {pattern:, replace:}    substitution, all matches
-#   regex_extract: {pattern:}              first capture group, or "" if no match
+#   regex_replace: {pattern:, replace:}    substitution, every match
+#   regex_extract: {pattern:}              first capture group of the first
+#                                          match; the whole match when the
+#                                          pattern has no group; "" when it
+#                                          does not match at all
 #
 # The subtlety worth knowing: `regex_extract` yielding "" makes the whole
 # template render empty, and a row whose id renders empty is skipped. That makes
@@ -91,8 +94,24 @@ fetch:
 # Use this when the list you need is implied by data you already have. Asking
 # the source for it a second time only risks the two disagreeing.
 derive:
-  # `explode` turns a list-valued field into one row per element, exposed to
-  # templates as {value}. Here: one row per author credit.
+  # `explode` fans one record out into several rows. Three forms, and the third
+  # is the one that does real work:
+  #
+  #   explode: authors
+  #       a list field -> one row per element, as {value}
+  #
+  #   explode: project_urls
+  #       a mapping field -> one row per entry, as {key} and {value}
+  #
+  #   explode: {field: text, pattern: "(?P<statute>\\d{3,4})\\s*sayılı"}
+  #       a text field -> one row per regex match. Named groups become fields,
+  #       so templates refer to {statute} directly, and {value} is the whole
+  #       match. This is how a pack pulls structure out of prose without a
+  #       model — tr-law builds its entire citation backbone this way.
+  #       Overlapping matches are not sought: a citation appearing twice in one
+  #       sentence is one citation.
+  #
+  # Here: one row per author credit, the list form.
   - id: authors
     source: books.jsonl
     out: authors.jsonl

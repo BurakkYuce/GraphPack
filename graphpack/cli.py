@@ -1024,6 +1024,27 @@ def bench_command(
         )
         raise typer.Exit(code=1)
 
+    # Before build_system, which takes minutes: a refusal should be immediate.
+    #
+    # Ingesting on top of an existing corpus writes every chunk a second time —
+    # Qdrant keys on its own ids, so the same passage comes back twice and the
+    # ranked list it feeds is wrong in a way no counter here would show.
+    # Refused rather than warned, because the output would otherwise be a
+    # plausible number.
+    if ingest:
+        with session_scope() as session:
+            existing = session.run(
+                "MATCH (c:Chunk {pack: $pack}) RETURN count(c) AS n", pack=loaded.name
+            ).single()
+        if existing and existing["n"]:
+            err_console.print(
+                f"[red]{loaded.name} already holds {existing['n']:,} chunk(s).[/red] "
+                f"--ingest would write them again, and duplicate passages make the ranking "
+                f"wrong rather than empty. Run `graphpack pack reset {loaded.name} "
+                f"--extraction-only --yes` first."
+            )
+            raise typer.Exit(code=1)
+
     system = build_system(loaded)
 
     if ingest:

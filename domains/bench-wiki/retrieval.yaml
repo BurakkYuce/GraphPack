@@ -88,10 +88,11 @@ intents:
 # without a reranker, and a block that took effect on its own would move all of
 # them at once with no test going red — so the run has to ask too.
 #
-# `fetch_factor: 3` is the honest part: a cross-encoder re-orders and cannot
-# promote what the retriever never returned, so scoring 20 reranked results
-# means retrieving 60 first. A reranked run is "60 retrieved, cut to 20"
-# against "20 retrieved" — two variables, and the output says so.
+# `fetch_factor: 3`: a cross-encoder re-orders and cannot promote what the
+# retriever never returned, so scoring 20 reranked results means retrieving 60
+# first — and the run prints that. It is not a second variable, because the
+# retriever returns its 60 in score order and the first 20 of them are the
+# plain top-20; the widening only supplies candidates the reranker may promote.
 rerank:
   model: BAAI/bge-reranker-large
   fetch_factor: 3

@@ -895,6 +895,62 @@ is left where it is rather than deleted, because the useful part of this section
 is that it was reported as a headline for two phases before anyone read the
 paper's definitions.
 
+### The reranker, measured
+
+```bash
+uv pip install -e '.[rerank]'          # optional extra; nothing else needs it
+uv run graphpack bench bench-wiki --chunk-level --top-k 20 --sample 500 --seed 0
+uv run graphpack bench bench-wiki --chunk-level --top-k 20 --sample 500 --seed 0 --rerank
+```
+
+Same 500 queries both times, same corpus, same depth. The only difference is a
+cross-encoder re-ordering what the vector leg returned.
+
+| | rerank off | **rerank on** | change |
+|---|---:|---:|---:|
+| MRR@10 | 0.389 | **0.660** | **+0.271** |
+| evidence recall@10 | 0.385 | **0.559** | +0.174 |
+| evidence recall@4 | 0.254 | **0.448** | +0.194 |
+| Hit@1 (any) | 0.257 | **0.564** | +0.307 |
+| Hit@10 (any) | 0.718 | **0.851** | +0.133 |
+| wall clock | ~4 min | **~100 min** | 25× |
+
+**The paper reports +0.193 MRR for its own pair** (voyage-02 0.393 →
+bge-reranker-large 0.586). This pipeline gains +0.271 from a nearly identical
+starting point — `nomic-embed-text` at 0.389 against their voyage-02 at 0.393 —
+using the same reranker they used.
+
+**The over-fetch is not what did it.** A reranked run retrieves 60 and keeps 20;
+a plain run retrieves 20. Those are not two variables, because the retriever
+returns its 60 in score order, so the first 20 of them *are* the plain top-20.
+Widening cannot improve the result on its own; it only supplies candidates the
+cross-encoder can promote past the cut, which is the effect being measured.
+
+**Where it lands against the published table**, with the same care F2 needed:
+
+| | MRR@10 | Hits@10 |
+|---|---:|---:|
+| paper, voyage-02 + bge-reranker-large — their best | 0.5860 | **0.7467** |
+| ours, nomic + bge-reranker-large, 500 queries | **0.660** | 0.559 |
+
+The same split as F2, and the same explanation. MRR is above; evidence recall is
+below. Our chunks are 1024 tokens against the paper's 256, which costs nothing
+for rank-of-first-hit and a great deal for covering an evidence set — twenty
+large chunks reach fewer articles. That measurement is
+[above](#where-it-still-disagrees-and-why) and it was made before this run, so
+this is the prediction holding rather than an explanation found afterwards.
+
+**What it costs.** 25× the wall clock, and that is with the GPU. On this
+machine, 60 chunks of ~1,000 tokens take 87.4s on CPU against 22.8s on Apple's
+MPS backend — the difference between 55 hours and 14 over the full 2,255-query
+set, which is why this measurement is 500 sampled queries and says so.
+
+**Why 500 and not 2,255.** `--sample`, not `--limit`: this project's own rule
+forbids file order for anything measured, and `bench` had only `--limit` until
+this phase. The first 500 queries are 41.2% comparison questions against 38.0%
+overall; a seeded sample of 500 is 39.6%. The baseline row above is a check on
+that — 0.389 on the sample against 0.378 measured over the full set.
+
 ### The null queries measure nothing, and that is worth saying
 
 301 queries have no answer in the corpus. Zero of them retrieved nothing —
@@ -1042,7 +1098,19 @@ question.
   [The comparison, actually run](#the-comparison-actually-run).
 - **The paper's chunk size, 256 tokens.** Blocked by this pack's metadata being
   269 tokens on its own. Needs the metadata hidden from the embedding, which is
-  a further change and the next run.
+  a further change and the next run. It is now the single largest open item:
+  both measurements that disagree with the paper — evidence recall with a
+  reranker and without — point at it.
+- ~~**Reranking.**~~ Run: MRR@10 0.389 → **0.660** with `bge-reranker-large`,
+  against the +0.193 the paper reports for its own pair. See
+  [The reranker, measured](#the-reranker-measured).
+- **Reranking on the full 2,255 queries.** Measured on a seeded sample of 500,
+  because the full set is 14 hours on this machine's GPU. The intervals are
+  ±4 points and the effect is +27, so the conclusion does not depend on it —
+  but the number in the table is a sample's.
+- **Reranking with hybrid retrieval.** The reranker was measured over the vector
+  leg alone. Fusion already buys +0.023 MRR on its own, and whether the two
+  stack or overlap is not known.
 - **`strict_schema` true versus false.** The sweep this phase planned is not
   worth running: on the dynamic extractor the setting is inert, and the section
   above is the evidence.

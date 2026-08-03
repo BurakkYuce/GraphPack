@@ -80,9 +80,15 @@ class Rerank:
 
     The over-fetch is the part worth stating: a reranker cannot promote a
     passage the retriever never returned, so scoring *k* reranked results means
-    retrieving ``k * fetch_factor`` first. Comparing reranked-at-20 against
-    plain-at-20 is therefore not a comparison of one variable, and the honest
-    description is "60 retrieved and cut to 20" against "20 retrieved".
+    retrieving ``k * fetch_factor`` first.
+
+    That widening is not a second variable, and the reason is worth being exact
+    about. The retriever returns its 60 in score order, so the first 20 of them
+    *are* the plain top-20 — over-fetching cannot improve the result by itself.
+    All it does is give the cross-encoder candidates it may promote past that
+    cut, which is the effect being measured. (The one caveat is that Qdrant's
+    search is approximate, so a k=60 query and a k=20 query need not agree on
+    the top 20 down to the last item.)
     """
 
     model: str = "BAAI/bge-reranker-large"

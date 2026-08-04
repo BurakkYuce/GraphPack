@@ -1168,6 +1168,40 @@ this phase. The first 500 queries are 41.2% comparison questions against 38.0%
 overall; a seeded sample of 500 is 39.6%. The baseline row above is a check on
 that — 0.389 on the sample against 0.378 measured over the full set.
 
+### Fusion and reranking mostly find the same thing
+
+Both improve retrieval, and the open question was whether they add up. Measured
+as a 2×2 — same 500 queries, same committed configuration, chunk level, depth 20:
+
+| MRR@10 | rerank off | **rerank on** | reranking buys |
+|---|---:|---:|---:|
+| vector only | 0.466 | 0.700 | **+0.234** |
+| **hybrid (vector + BM25)** | 0.518 | **0.719** | +0.201 |
+| *fusion buys* | *+0.052* | *+0.019* | |
+
+| evidence recall@10 | rerank off | **rerank on** | reranking buys |
+|---|---:|---:|---:|
+| vector only | 0.456 | 0.597 | **+0.141** |
+| **hybrid** | 0.546 | **0.612** | +0.066 |
+| *fusion buys* | *+0.090* | *+0.015* | |
+
+**They overlap, and the overlap is most of fusion.** Applied alone the two gains
+are +0.052 and +0.234; applied together the total is +0.253, not +0.286. On
+evidence recall the redundancy is larger still: +0.090 and +0.141 separately,
++0.156 together. Once a cross-encoder is re-reading sixty candidates, the BM25
+leg is telling it something it had already worked out.
+
+**But not the same thing at rank one.** Fusion does not move Hit@1 at all —
+0.335 either way, the third time this document has measured that and got exactly
+zero. The reranker takes it to 0.606. Fusion pulls more of the right passages
+into positions two through ten; only the reranker changes which one is first.
+
+**What that means for anyone choosing.** Fusion is nearly free and buys about a
+fifth of what a reranker does. A reranker costs 25× the wall clock and buys the
+rest — including the only movement anyone has measured at rank one. Running both
+buys +0.019 MRR over the reranker alone, which is inside the noise of most
+things and is the one combination this table would not bother with.
+
 ### The null queries measure nothing, and that is worth saying
 
 301 queries have no answer in the corpus. Zero of them retrieved nothing —
@@ -1328,9 +1362,9 @@ question.
   because the full set is 14 hours on this machine's GPU. The intervals are
   ±4 points and the effect is +27, so the conclusion does not depend on it —
   but the number in the table is a sample's.
-- **Reranking with hybrid retrieval.** The reranker was measured over the vector
-  leg alone. Fusion already buys +0.023 MRR on its own, and whether the two
-  stack or overlap is not known.
+- ~~**Reranking with hybrid retrieval.**~~ Measured as a 2×2: they overlap.
+  Separately +0.052 and +0.234 MRR; together +0.253, not +0.286. See
+  [Fusion and reranking mostly find the same thing](#fusion-and-reranking-mostly-find-the-same-thing).
 - **`strict_schema` true versus false.** The sweep this phase planned is not
   worth running: on the dynamic extractor the setting is inert, and the section
   above is the evidence.

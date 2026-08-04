@@ -520,6 +520,54 @@ than something shaped around particular misses.
 The committed configuration keeps `holdout: 0.3`. Turning the check off after it
 came back favourable would be the one move that makes it worthless.
 
+### The task declared a relation and never checked it
+
+`statute_citations` is configured `relation: CITES` and reported 97.0%
+precision against 1,242 gold edges. The graph holds **170 `CITES` relations in
+total**. Those two facts cannot both be about the same thing, and following that
+arithmetic is how this was found.
+
+`document_edges` never read `task.relation`. A prediction was *"a chunk of this
+document mentions an entity that resolved to a node of the right label"* — the
+declared relation was parsed, stored, printed in the task's own description, and
+never used for anything but locating the gold. Two phases of numbers under it.
+
+**The score was not wrong; its name was.** Mention-and-resolution is a real
+measurement of a real thing — did the document name a statute a reader could
+identify — and it is the harder half of what most pipelines get wrong. It is
+just not relation extraction, which is what `CITES` sounds like.
+
+So both are now measured, over the same documents:
+
+```bash
+uv run graphpack eval tr-law     # four tasks: two loose, two strict
+```
+
+| | scores | precision | recall |
+|---|---|---:|---:|
+| `statute_citations` | mentions of `Statute` | 98.4% | 65.4% |
+| **`statute_citations_strict`** | **`CITES` extracted** | 90.9% | **13.1%** |
+| `article_citations` | mentions of `Article` | 65.1% | 73.6% |
+| **`article_citations_strict`** | **`CITES_ARTICLE` extracted** | 75.7% | **24.2%** |
+
+**Relation extraction recovers about an eighth of the citations.** The model
+finds the statute — entity extraction and resolution are the strong half — and
+then does not draw the edge. When it does draw one it is usually right, 90.9%,
+so this is pure recall and there is nothing subtle about where it goes.
+
+That reframes what this pack's headline meant. `81.4% F1` and the 97% precision
+beside it are mention-level, and everything this document has said about tr-law
+being the well-behaved pack remains true of *that* quantity. The relation-level
+number had never been taken.
+
+**The near-miss, since it is the more useful half.** The first working version of
+the strict task read **59.0%** recall, not 13.1%. `document_edges` restricts gold
+to documents that were actually ingested, and it proxies that with "documents
+having a resolved mention" — so deriving the proxy from the *strict* prediction
+dropped every document extraction had failed on out of the gold set, and
+reported recall over the documents it had already succeeded on. Both tasks now
+share the loose denominator, and a test fails if that is undone.
+
 ### What the second task still cannot measure
 
 ```

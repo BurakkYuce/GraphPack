@@ -56,10 +56,23 @@ class Task:
     #: sometimes all a sentence says, and penalising a model for guessing the
     #: direction of a symmetric statement measures nothing.
     directed: bool = True
+    #: For ``document_edges``: require the declared ``relation`` to have been
+    #: extracted, rather than counting a mention that resolved.
+    #:
+    #: The default is False, which is what this generator has always done — and
+    #: which was invisible, because the task declares a ``relation`` that was
+    #: then never read. tr-law's `statute_citations` reported 97% precision and
+    #: 69% recall against 1,242 gold edges while the graph held 170 `CITES`
+    #: relations in total: the score was never about relations. It is a fair
+    #: measurement of a real thing — did the document name a statute the
+    #: reader could identify — but it is not the thing the name suggests, and
+    #: both belong in the report.
+    require_relation: bool = False
 
     @property
     def describes(self) -> str:
-        return f"{self.name} ({self.generator}: {self.relation})"
+        kind = self.relation if self.require_relation else f"mentions of {self.endpoint_label}"
+        return f"{self.name} ({self.generator}: {kind})"
 
 
 @dataclass(frozen=True)
@@ -138,4 +151,5 @@ def _parse_task(item: Any, path: Path, index: int) -> Task:
         endpoint_label=str(item["endpoint_label"]),
         source_label=str(item.get("source_label") or ""),
         directed=bool(item.get("directed", True)),
+        require_relation=bool(item.get("require_relation", False)),
     )

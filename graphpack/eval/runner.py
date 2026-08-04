@@ -133,11 +133,18 @@ def _diagnose_misses(
 ) -> tuple[dict[str, int], dict[str, list]]:
     """Sort missed gold pairs by which stage lost them.
 
-    Every gold pair has both endpoints resolved by construction — that is how it
-    became gold — so the question is what extraction did between them: claimed
-    nothing, or claimed something of another type. The second is a schema
-    problem and the first is a reading problem, and they are worked on
+    On ``backbone_edges`` both endpoints are resolved by construction — that is
+    how the pair became gold — so the question is what extraction did between
+    them: claimed nothing, or claimed something of another type. The second is a
+    schema problem and the first is a reading problem, and they are worked on
     differently.
+
+    **On ``document_edges`` without ``require_relation`` that framing is wrong**,
+    and said so out loud for two phases. A prediction there needs no relation at
+    all, so a miss means the document's chunks never mentioned anything that
+    resolved to the target — printing "both ends resolved, nothing between them"
+    described a check the score never made. Those misses are labelled for what
+    they are, and the relation query is not run.
 
     Only the sampled misses are diagnosed. The purpose is to know the shape of
     the problem, not to label every failure.
@@ -145,7 +152,16 @@ def _diagnose_misses(
     causes: dict[str, int] = {}
     examples: dict[str, list] = {}
 
+    scores_relations = task.generator != "document_edges" or task.require_relation
+
     for start, end in missed[:limit]:
+        if not scores_relations:
+            cause = "target never mentioned in the document"
+            causes[cause] = causes.get(cause, 0) + 1
+            examples.setdefault(cause, []).append(
+                f"{start} -> {end}: no chunk of this document mentions anything resolving to it"
+            )
+            continue
         types = (
             session.run(_ANY_RELATION_BETWEEN, pack=pack, start=start, end=end).single()["types"]
             or []

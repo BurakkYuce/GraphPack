@@ -258,3 +258,98 @@ def test_a_task_reports_how_many_subjects_the_holdout_kept():
     # And the whole-corpus diagnostic is still whole-corpus, not silently
     # rewritten to match — the point is that both are visible.
     assert report.results[0].diagnostics["documents_carrying_gold"] == 10
+
+
+@pytest.mark.unit
+def test_require_relation_keeps_the_denominator_of_the_loose_task():
+    """The flattering bug this flag nearly shipped with.
+
+    `ingested` is the proxy for "this document went through extraction", and it
+    is what restricts gold. Deriving it from the *prediction* drops every
+    document extraction failed on out of the gold set, so recall is reported
+    over the documents it already succeeded on. The strict task read 59.0%
+    that way and 13.1% over the same documents the loose task uses.
+    """
+    from graphpack.eval.contract import Task
+    from graphpack.eval.generators import document_edges
+
+    # Two documents, both extracted (both mention the statute). Only one of them
+    # also has the CITES relation.
+    session = _FakeSession(
+        backbone={"dec:1": ["kanun:1"], "dec:2": ["kanun:1"]},
+        mentions={"dec:1": ["kanun:1"], "dec:2": ["kanun:1"]},
+        related={"dec:1": ["kanun:1"]},
+    )
+    task = Task(
+        name="t",
+        generator="document_edges",
+        relation="CITES",
+        backbone_relation="CITES",
+        endpoint_label="Statute",
+        source_label="Decision",
+        require_relation=True,
+    )
+
+    predicted, gold, _ = document_edges(session, "p", task)
+
+    # Both documents stay in gold — the one extraction missed is the point.
+    assert gold == {("dec:1", "kanun:1"), ("dec:2", "kanun:1")}
+    assert predicted == {("dec:1", "kanun:1")}
+
+
+@pytest.mark.unit
+def test_without_require_relation_a_mention_is_enough():
+    """What this generator has always scored, now said out loud.
+
+    The task declares a relation and, by default, never checks it. That is a
+    fair measurement of a real thing and not the thing the name suggests — the
+    graph held 170 CITES relations while this reported 97% precision against
+    1,242 gold edges.
+    """
+    from graphpack.eval.contract import Task
+    from graphpack.eval.generators import document_edges
+
+    session = _FakeSession(
+        backbone={"dec:1": ["kanun:1"]},
+        mentions={"dec:1": ["kanun:1"]},
+        related={},
+    )
+    task = Task(
+        name="t",
+        generator="document_edges",
+        relation="CITES",
+        backbone_relation="CITES",
+        endpoint_label="Statute",
+        source_label="Decision",
+    )
+
+    predicted, gold, _ = document_edges(session, "p", task)
+
+    assert predicted == gold == {("dec:1", "kanun:1")}
+
+
+class _FakeSession:
+    """Enough of a Neo4j session to tell the generator's three queries apart."""
+
+    def __init__(self, backbone, mentions, related):
+        self._backbone = backbone
+        self._mentions = mentions
+        self._related = related
+
+    def run(self, query, **_kwargs):
+        if "RESOLVED_AS" in query and "]->(other" in query:
+            rows = [{"document": d, "entities": list(e)} for d, e in self._related.items()]
+        elif "RESOLVED_AS" in query:
+            rows = [{"document": d, "entities": list(e)} for d, e in self._mentions.items()]
+        elif "count(" in query:
+            rows = [{"n": 0}]
+        else:
+            rows = [{"document": d, "targets": list(t)} for d, t in self._backbone.items()]
+        return _Result(rows)
+
+
+class _Result(list):
+    """A list that also answers `.single()`, which the diagnostics use."""
+
+    def single(self):
+        return self[0] if self else None

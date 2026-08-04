@@ -42,6 +42,36 @@ tasks:
     endpoint_label: Article
     directed: true
 
+  # The same gold, scored against relation extraction rather than mentions.
+  #
+  # The two tasks above ask "did the document name a statute a reader could
+  # identify". That is a real question and a fair measurement, but it is not
+  # what `relation: CITES` sounds like — and until `require_relation` existed,
+  # the declared relation was parsed and never used. The graph holds 170 `CITES`
+  # relations against 1,242 gold edges, so the strict number is a different
+  # number, and it is the one that says anything about relation extraction.
+  #
+  # Both are kept. Removing the loose pair would delete two phases of published
+  # measurement; removing the strict pair would go back to reporting one
+  # quantity under the other's name.
+  - name: statute_citations_strict
+    generator: document_edges
+    relation: CITES
+    backbone_relation: CITES
+    source_label: Decision
+    endpoint_label: Statute
+    directed: true
+    require_relation: true
+
+  - name: article_citations_strict
+    generator: document_edges
+    relation: CITES_ARTICLE
+    backbone_relation: CITES_ARTICLE
+    source_label: Decision
+    endpoint_label: Article
+    directed: true
+    require_relation: true
+
 # Thirty percent of decisions are held out, and this pack is the reason the
 # other two are not.
 #

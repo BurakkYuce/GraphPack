@@ -40,6 +40,18 @@ logger = logging.getLogger(__name__)
 #: between every document that mentions it, so its ``ref_doc_id`` names one of
 #: them arbitrarily — whichever write landed last. The chunk is per document and
 #: the store links the two with MENTIONS.
+#: The stricter prediction: the declared relation was actually extracted between
+#: this document's node and the resolved target. Matched through `RESOLVED_AS`
+#: on both ends for the same reason every other query here does — a relation
+#: between two things nobody can identify is not a claim about the world.
+_RELATED_PER_DOCUMENT = """
+MATCH (chunk)-[:MENTIONS]->(e:{entity} {{pack: $pack}})
+MATCH (e)-[:{relation}]->(other:{entity} {{pack: $pack}})
+MATCH (other)-[:RESOLVED_AS]->(c:{label} {{pack: $pack}})
+WHERE chunk.ref_doc_id IS NOT NULL
+RETURN chunk.ref_doc_id AS document, collect(DISTINCT c.id) AS entities
+"""
+
 _MENTIONS_PER_DOCUMENT = """
 MATCH (chunk)-[:MENTIONS]->(e:{entity} {{pack: $pack}})
 MATCH (e)-[:RESOLVED_AS]->(c:{label} {{pack: $pack}})
@@ -157,9 +169,21 @@ def document_edges(session, pack: str, task) -> tuple[set, set, dict]:
     """Score what a document was linked to, against what the backbone says it is.
 
     Gold is `(document, target)` for every backbone edge out of a document that
-    the corpus actually ingested. Prediction is `(document, target)` for every
-    entity mentioned in that document's chunks that resolved to the right kind
-    of node.
+    the corpus actually ingested.
+
+    A prediction is, by default, `(document, target)` for every entity mentioned
+    in that document's chunks that resolved to the right kind of node — **no
+    extracted relation is required**, and the task's ``relation`` is used only
+    to find the gold. That is a fair measurement of a real thing: did the
+    document name a statute a reader could identify. It is not what the task's
+    own name suggests, and the gap was invisible for two phases because the
+    declared ``relation`` was never read. tr-law reported 97% precision against
+    1,242 gold edges while its graph held 170 `CITES` relations in total.
+
+    ``require_relation: true`` scores the stricter thing — the relation had to
+    be extracted between the resolved endpoints. Both belong in a report,
+    because they answer different questions and only one of them is about
+    relation extraction.
 
     Restricted to ingested documents on purpose. The backbone holds every
     decision the fetch produced; charging extraction for the 1,378 that were
@@ -176,13 +200,34 @@ def document_edges(session, pack: str, task) -> tuple[set, set, dict]:
     ):
         backbone[row["document"]] = set(row["targets"])
 
-    mentions: dict[str, set[str]] = {}
+    # Two queries, and the split matters more than it looks. `reached` is every
+    # document whose chunks mention something resolving to the target label, and
+    # it is only used as the proxy for "this document went through extraction".
+    # `mentions` is the prediction, which `require_relation` narrows.
+    #
+    # Deriving the denominator from the *prediction* instead — which one version
+    # of this did — drops every document extraction failed on out of the gold
+    # set, and reports recall over the documents it already succeeded on. The
+    # strict task read 59.0% that way against 155 documents; over the same 710
+    # the loose task uses, it is a different and much smaller number.
+    reached: dict[str, set[str]] = {}
     for row in session.run(
         _MENTIONS_PER_DOCUMENT.format(entity=ENTITY_LABEL, label=task.endpoint_label), pack=pack
     ):
-        mentions[row["document"]] = set(row["entities"])
+        reached[row["document"]] = set(row["entities"])
 
-    ingested = set(mentions)
+    mentions = reached
+    if task.require_relation:
+        mentions = {}
+        for row in session.run(
+            _RELATED_PER_DOCUMENT.format(
+                entity=ENTITY_LABEL, label=task.endpoint_label, relation=task.relation
+            ),
+            pack=pack,
+        ):
+            mentions[row["document"]] = set(row["entities"])
+
+    ingested = set(reached)
     if not ingested:
         logger.warning(
             "No document has a resolved %s mention — nothing to score", task.endpoint_label

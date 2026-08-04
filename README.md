@@ -43,10 +43,13 @@ interval from ±13 points to ±6. The dependency task still supports no
 conclusion, and both are reported side by side because the gap between them is
 the finding.
 
-`graphpack ablate` puts the graph-versus-retrieval claim at 26.8% recovery.
-MultiHop-RAG scores MRR@10 0.759 over 2,255 queries — which is *not* above the
-paper's published 0.586, because it measures an easier quantity; the two are not
-comparable and [RESULTS.md](docs/RESULTS.md) says exactly why.
+`graphpack ablate` puts the graph-versus-retrieval claim at 26.8% recovery. On
+MultiHop-RAG, measured at the paper's own granularity with its own embedding
+model, **MRR@10 0.417 against its published 0.4203** — a reproduction, and one
+that took correcting our own metric first: the same run reads 0.759 under the
+looser definition this project used at the time, which is why
+[RESULTS.md](docs/RESULTS.md) carries both and says which is which. Adding
+`bge-reranker-large` takes 0.466 to **0.700** on the committed configuration.
 
 - [docs/WRITEUP.md](docs/WRITEUP.md) — what the project claims, what it showed,
   and where it is weak

@@ -66,29 +66,36 @@ that this domain happened to need first. It is not "zero code forever" — it is
 Full numbers, with the commands that produce them, are in
 [RESULTS.md](RESULTS.md). The two that matter here:
 
-**The benchmark works and is well measured.** MultiHop-RAG, all 2,556 queries,
-vector retrieval: MRR@10 **0.759**, Hit@1 0.631, Hit@10 0.977, intervals ±2
-points.
+**The published benchmark reproduces.** MultiHop-RAG, at the paper's own
+granularity, with the paper's own embedding model and metric: **MRR@10 0.417
+against its 0.4203.** Getting there took correcting our own measurement first —
+the same run scored 0.759 the way this project had been reporting it, and a
+number 30% above the published best was the sign that two quantities had been
+given one name. The paper scores *chunks*; we were reducing chunks to articles.
+Its Hit@K is recall over a query's whole evidence set; ours asked whether any
+one piece was found. Both made our task easier.
 
-**And the full-text half finally has a number.** Every figure this project had
-published was the vector leg alone — not by choice, but because the engine's
-BM25 docstore lives in memory on the object that ingested, so a benchmark run as
-a separate command has vectors and nothing else. Doing both in one process
-(`bench --ingest --hybrid`) scores the fusion retriever: MRR@10 **0.782**, Hit@4
-0.909 → **0.953**. Hit@1 does not move at all. Fusion is not finding a better
-first answer; it is pulling more of the right articles into positions two
-through four — which for a multi-hop benchmark, where an answer rests on
-several articles, is the half of the ranking that matters and the half a single
-number hides.
+**The reranker is the largest single lever, and larger here than in the paper.**
+`bge-reranker-large` over the same 500 sampled queries: **MRR@10 0.466 →
+0.700**, evidence recall@10 0.456 → 0.597. The paper reports +0.193 for its own
+pair from a nearly identical starting point; this is +0.234. It costs 25× the
+wall clock, and that is with the GPU.
 
-**That 0.759 is not comparable to the paper's 0.586, and this repository said
-otherwise twice.** Both earlier versions claimed the gap was one embedding model
-and a reranker away. Reading the paper shows the metrics differ: it scores
-*chunks* where we reduce chunks to articles and score those, and its Hit@K is
-recall over a query's whole evidence set where ours asks whether any one piece
-was found. Both differences make our task easier, which is the only reasonable
-reading of a small open embedding model with no reranker beating the published
-best by 30%. RESULTS.md carries the table and what a real comparison would take.
+**Hybrid retrieval buys the middle of the ranking.** Every figure this project
+first published was the vector leg alone — not by choice, but because the
+engine's BM25 docstore lives in memory on the object that ingested. Doing both
+in one process (`bench --ingest --hybrid`) scores the fusion retriever: at
+article level, MRR@10 0.731 → **0.747**, Hit@4 0.897 → **0.928**, and Hit@1 does
+not move at all. Fusion is not finding a better first answer; it pulls more of
+the right articles into positions two through four, which for a multi-hop
+benchmark is the half that matters and the half a single number hides.
+
+**Two predictions were written down and then refuted by their own runs.** That
+the gap to the paper was chunk size — matching its 256 tokens made every measure
+*worse*. And, earlier, that oss's low score was model, extractor or coverage —
+it was the gold generator. RESULTS.md keeps both as written rather than
+correcting them, because a prediction that was recorded before the run is worth
+more refuted than a diagnosis edited afterwards.
 
 **Extraction is measured in two domains now.** tr-law: F1 **81.4%**, precision
 97.2%, over 150 gold edges, interval ±5. oss took longer to become measurable at

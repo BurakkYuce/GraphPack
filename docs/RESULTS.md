@@ -1117,12 +1117,20 @@ cross-encoder re-ordering what the vector leg returned.
 
 | | rerank off | **rerank on** | change |
 |---|---:|---:|---:|
-| MRR@10 | 0.389 | **0.660** | **+0.271** |
-| evidence recall@10 | 0.385 | **0.559** | +0.174 |
-| evidence recall@4 | 0.254 | **0.448** | +0.194 |
-| Hit@1 (any) | 0.257 | **0.564** | +0.307 |
-| Hit@10 (any) | 0.718 | **0.851** | +0.133 |
+| MRR@10 | 0.466 | **0.700** | **+0.234** |
+| evidence recall@10 | 0.456 | **0.597** | +0.141 |
+| evidence recall@4 | 0.302 | **0.472** | +0.170 |
+| Hit@1 (any) | 0.335 | **0.606** | +0.271 |
+| Hit@10 (any) | 0.791 | **0.897** | +0.106 |
 | wall clock | ~4 min | **~100 min** | 25× |
+
+Both rows are the committed configuration — 1024-token chunks with metadata
+hidden from the embedding. Measured first on the previous setup and re-measured
+here when that changed, which is worth a line of its own: the reranker's *gain*
+shrank as the baseline improved (+0.271 against a 0.389 baseline, +0.234 against
+0.466) while the reranked score itself rose, 0.660 to 0.700. A reranker recovers
+what retrieval put within reach; make retrieval better and there is less to
+recover and a higher place to recover it to.
 
 **The paper reports +0.193 MRR for its own pair** (voyage-02 0.393 →
 bge-reranker-large 0.586). This pipeline gains +0.271 from a nearly identical
@@ -1140,7 +1148,7 @@ cross-encoder can promote past the cut, which is the effect being measured.
 | | MRR@10 | Hits@10 |
 |---|---:|---:|
 | paper, voyage-02 + bge-reranker-large — their best | 0.5860 | **0.7467** |
-| ours, nomic + bge-reranker-large, 500 queries | **0.660** | 0.559 |
+| ours, nomic + bge-reranker-large, 500 queries | **0.700** | 0.597 |
 
 The same split as F2, and the same explanation. MRR is above; evidence recall is
 below. Our chunks are 1024 tokens against the paper's 256, which costs nothing
@@ -1313,7 +1321,7 @@ question.
   out.** No measured explanation remains. The open candidate is the embedding
   model: ada-002 scored 0.407 against nomic's 0.385 with metadata still
   embedded, and an ada-002 run with metadata hidden has not been made.
-- ~~**Reranking.**~~ Run: MRR@10 0.389 → **0.660** with `bge-reranker-large`,
+- ~~**Reranking.**~~ Run: MRR@10 0.466 → **0.700** with `bge-reranker-large`,
   against the +0.193 the paper reports for its own pair. See
   [The reranker, measured](#the-reranker-measured).
 - **Reranking on the full 2,255 queries.** Measured on a seeded sample of 500,

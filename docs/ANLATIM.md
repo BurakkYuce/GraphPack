@@ -76,10 +76,23 @@ zorlanıyor.**
 var (MultiHop-RAG): 609 haber makalesi, 2.556 soru. Sorular tek makalede
 cevaplanmıyor, birkaçını birleştirmek gerekiyor.
 
-- İlk denemede doğru makale: **%63**
+- İlk denemede doğru makale: **%59**
 - İlk 10 arasında: **%98**
 
 Bunlar 2.255 soru üzerinde ölçüldü, yani sağlam sayılar.
+
+**Ve asıl sonuç bu değil.** Aynı sınavı yayımlayan ekip kendi sayılarını da
+açıklamış. Uzun süre bizimkiler onlarınkinden %30 yüksek göründü — ki bu iyi bir
+haber değil, "aynı ada iki farklı şey demişiz" işaretiydi. Öyleymiş: onlar
+paragraf düzeyinde puanlıyor, biz makale düzeyinde; onların ölçüsü "kanıtların
+kaçını buldun", bizimki "en az birini buldun mu". İkisini de düzeltip aynı
+modeli kullanınca: **bizim 0,417'ye karşı onların 0,4203'ü.** Yani sayı
+yakalandı, ve yakalamak için önce kendi ölçümümüzü düzeltmek gerekti.
+
+**Sonra bir şey ekledik ve en büyük sıçramayı o yaptı.** "Yeniden sıralayıcı"
+denen ikinci bir model, aramanın getirdiği 60 parçayı soruyla birlikte tekrar
+okuyup en iyi 20'yi seçiyor. Skor **0,466'dan 0,700'e** çıktı — makalenin kendi
+denemesinde gördüğü sıçramadan büyük. Bedeli: aynı iş 25 kat uzun sürüyor.
 
 **Zorlanan: belgeyi yapay zekâya okutup pano kurdurmak.**
 
@@ -126,7 +139,7 @@ karşılaştırıyoruz. **Kimse tek bir etiket yazmadı.**
 
 Bu kısım bilerek burada, "gelecek çalışmalar"a süpürülmedi.
 
-**Üç kez teşhis koyduk, ikisi yanlış çıktı.** Yazılım paketleri tarafı uzun süre
+**Dört kez teşhis koyduk, üçü yanlış çıktı.** Yazılım paketleri tarafı uzun süre
 ölçülemedi: not verilebilecek yalnızca 20-24 örnek çıkıyordu, ki 20 örnekle
 "başarı %22" demek 20 kişiye sorup seçim tahmini yapmak gibidir.
 
@@ -138,9 +151,18 @@ paket arıyordu. Başlıkları da panoya birer düğüm olarak ekleyince — kod
 ayar — örnek sayısı **24'ten 135'e** çıktı ve belirsizlik payı ±13 puandan
 ±6'ya indi.
 
-Bunun dersi "ilk iki tahmin kötüydü" değil. Bir teşhisi **yazmak**, onu
-birinin koşabileceği bir iddiaya çevirir; koşmak bir dolar ve yirmi dakika,
-yanlış inançla devam etmek ise ondan sonraki her kararı şekillendirirdi.
+Dördüncüsü de aynı şekilde çürüdü, ve bu sefer konu haber sınavıydı. "Bizim
+metin parçalarımız makalenin kullandığından dört kat büyük, eksik kalan
+performans oradan" diye yazmıştık. Onların boyutuna indirdik: **her ölçüde daha
+kötü çıktı.** Sebebi de ölçüldü — küçük parçalarla 20 sonuç getirmek, dörtte bir
+kadar metin getirmek demekmiş, üstelik kanıt cümlelerinin 86'sı parça sınırına
+bölünüyormuş.
+
+Bunun dersi "tahminler kötüydü" değil. Bir teşhisi **yazmak**, onu birinin
+koşabileceği bir iddiaya çevirir; koşmak yirmi dakika, yanlış inançla devam
+etmek ise ondan sonraki her kararı şekillendirirdi. Yazılı ve çürütülmüş bir
+tahmin, sonradan düzeltilmiş bir teşhisten değerlidir — o yüzden hiçbiri
+silinmedi, hepsi olduğu gibi duruyor.
 
 **Yeni ölçüm daha kolay bir soru soruyor, ve bunu da yazıyoruz.** "Bu başlığın
 kendi paketi metinde anılıyor mu" sorusu, "bağımlılık ilişkisi bulundu mu"
@@ -193,8 +215,9 @@ Paketlerin kendisi değil, yöntemler:
 > 8 satır kod, asıl sistemde sıfır değişiklik — ve sıfır olduğunu otomatik
 > kontrol ediyoruz.
 >
-> Doğru belgeyi bulma tarafı iyi çalışıyor: halka açık bir sınavda ilk denemede
-> %63, ilk onda %98. Yapay zekâya okutup pano kurdurma tarafı zor: model
+> Doğru belgeyi bulma tarafı iyi çalışıyor: halka açık bir sınavı yayımlayan
+> ekibin kendi sayısını yeniden ürettik — bizim 0,417'ye karşı onların 0,4203'ü,
+> aynı model, aynı ölçü. Yapay zekâya okutup pano kurdurma tarafı zor: model
 > verdiğimiz kuralların ancak %18'ine uyuyordu.
 >
 > En kıymetli iki bulgu da orada. Birincisi: kimse bu uyumu ölçmüyordu — asıl
@@ -204,4 +227,6 @@ Paketlerin kendisi değil, yöntemler:
 > İkincisi daha genel: bir ölçüm düşük çıktığında önce "sistem kötü" demeyip
 > "acaba yanlış soru mu soruyorum" diye sormak. Bizde cevabı evetti — soruyu
 > değiştirince, tek bir belgeyi yeniden okutmadan, ölçülebilir örnek sayısı
-> beşe katlandı.
+> beşe katlandı. Aynı refleks bir sayımızın kopyalanmış veri üzerinde
+> ölçüldüğünü de yakaladı; kanıtlamak için kopyalamayı kasten tekrarladık ve
+> yayımladığımız beş sayı da birebir geri geldi.

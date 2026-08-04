@@ -543,12 +543,22 @@ So both are now measured, over the same documents:
 uv run graphpack eval tr-law     # four tasks: two loose, two strict
 ```
 
-| | scores | precision | recall |
-|---|---|---:|---:|
-| `statute_citations` | mentions of `Statute` | 98.4% | 65.4% |
-| **`statute_citations_strict`** | **`CITES` extracted** | 90.9% | **13.1%** |
-| `article_citations` | mentions of `Article` | 65.1% | 73.6% |
-| **`article_citations_strict`** | **`CITES_ARTICLE` extracted** | 75.7% | **24.2%** |
+**On the held-out 30%**, which is what this pack scores — the full-corpus figures
+elsewhere in this document are the loose tasks only, and the strict pair has no
+full-corpus run yet.
+
+The gold columns are 382 against 383, and the one-edge difference is not a typo:
+the holdout draws its subjects from the union of gold and *predictions*, so
+changing what a task predicts moves the split by a document. Same corpus, same
+denominator rule, splits that differ by one. Worth knowing before treating the
+two rows as strictly paired.
+
+| | scores | precision | recall | gold |
+|---|---|---:|---:|---:|
+| `statute_citations` | mentions of `Statute` | 98.4% | 65.4% | 382 |
+| **`statute_citations_strict`** | **`CITES` extracted** | 90.9% | **13.1%** | 383 |
+| `article_citations` | mentions of `Article` | 65.1% | 73.6% | 261 |
+| **`article_citations_strict`** | **`CITES_ARTICLE` extracted** | 75.7% | **24.2%** | 231 |
 
 **Relation extraction recovers about an eighth of the citations.** The model
 finds the statute — entity extraction and resolution are the strong half — and

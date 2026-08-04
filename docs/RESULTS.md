@@ -1307,6 +1307,45 @@ this phase. The first 500 queries are 41.2% comparison questions against 38.0%
 overall; a seeded sample of 500 is 39.6%. The baseline row above is a check on
 that — 0.389 on the sample against 0.378 measured over the full set.
 
+### The embedding model is not the missing recall either
+
+After chunk size was ruled out, the only candidate left for the gap to the
+published evidence recall was the embedding model — and that was the reason to
+run a paid ada-002 comparison. A local model two tiers up answers it for nothing:
+
+| | dimensions | MRR@10 | evidence recall@10 |
+|---|---:|---:|---:|
+| `nomic-embed-text` (committed) | 768 | 0.466 | 0.456 |
+| **`mxbai-embed-large`** | 1024 | **0.503** | **0.473** |
+| paper, `text-embedding-ada-002` | 1536 | 0.4203 | **0.6381** |
+
+**+0.017 of recall, against 0.165 missing.** Going up a model tier buys about a
+tenth of the gap, so a third tier will not close it either. The embedding model
+is a real but small effect and it is not the explanation.
+
+Note the split has not moved: our MRR is now *above* the paper's ada-002 while
+our recall is a third below it. Two systems agreeing on where the first correct
+chunk lands and disagreeing that much on how many of the rest are found is a
+strange shape for a retrieval difference, and every retrieval-side explanation
+this document has tried — chunk boundaries, chunk size, embedding model — has
+now been measured and rejected.
+
+**What is left is the relevance criterion itself.** A chunk counts here when it
+*contains* an evidence sentence, matched as an exact substring after whitespace
+and case are normalised. If the paper's check is looser than that — fuzzy,
+overlap-based, or model-judged — its recall would be higher on identical
+retrieval, and no amount of retrieval work on this side would close it. That is
+not a hypothesis this repository can test: it needs their matching code, not
+another run.
+
+**`mxbai-embed-large` is not committed**, and the reason is the cost of the
+number rather than the number. Every figure in this document is
+`nomic-embed-text`; adopting a model worth +0.037 MRR would mean re-running
+article-level, hybrid, and both reranked configurations to keep them
+comparable — hours, for an effect smaller than the reranker's by a factor of
+six. It is measured, it is written down here, and switching is two lines of
+`pack.yaml` when there is a reason to.
+
 ### The reranker helps both metrics; it is not another trade
 
 Hiding metadata improved one measurement and cost the other, which raised the
@@ -1514,10 +1553,11 @@ question.
   from the embedding. It made retrieval **worse** — evidence recall@10 0.318
   against 1024's 0.456 — and refuted the diagnosis that predicted it. See
   [the section](#the-papers-chunk-size-and-the-diagnosis-it-refutes).
-- **Why evidence recall is below the paper's, now that chunk size is ruled
-  out.** No measured explanation remains. The open candidate is the embedding
-  model: ada-002 scored 0.407 against nomic's 0.385 with metadata still
-  embedded, and an ada-002 run with metadata hidden has not been made.
+- **Why evidence recall is below the paper's.** Every retrieval-side
+  explanation has now been measured and rejected: chunk boundaries, chunk size,
+  and the embedding model — `mxbai-embed-large` buys +0.017 against 0.165
+  missing. What remains is the relevance criterion itself, and testing that
+  needs the paper's matching code rather than another run here.
 - ~~**Reranking.**~~ Run: MRR@10 0.466 → **0.700** with `bge-reranker-large`,
   against the +0.193 the paper reports for its own pair. See
   [The reranker, measured](#the-reranker-measured).

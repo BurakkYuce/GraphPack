@@ -842,6 +842,22 @@ def eval_command(
             f"\n[dim]Scored on a held-out {report.documents_held_out}-subject slice.[/dim]"
         )
 
+    # Edges a verification pass wrote are in the graph and therefore in every
+    # number above. Said out loud on every run, because a score that silently
+    # includes relations the extractor did not produce is a score about a
+    # different pipeline than the one it appears to describe.
+    from graphpack.verify import count_verified
+
+    with session_scope() as session:
+        verified = count_verified(session, loaded.name)
+    if verified:
+        console.print(
+            f"\n[yellow]{verified:,} edge(s) above came from `graphpack verify`, "
+            f"not from extraction.[/yellow] "
+            f"[dim]Remove them with `graphpack verify {loaded.name} --forget` to score "
+            f"extraction alone.[/dim]"
+        )
+
 
 @app.command("ask")
 def ask_command(
@@ -1055,6 +1071,82 @@ def viz_command(
         f"[green]Wrote {out}[/green] — {len(graph.nodes)} node(s), {len(graph.edges)} edge(s), "
         f"{len(trace.events)} step(s)"
     )
+
+
+@app.command("verify")
+def verify_command(
+    pack: str = typer.Argument(..., help="Pack whose relations to verify."),
+    task: str = typer.Option(..., "--task", help="Eval task naming the relation to check."),
+    limit: int | None = typer.Option(None, "--limit", "-n", help="Check only the first N pairs."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Ask and count; write nothing."),
+    forget: bool = typer.Option(False, "--forget", help="Remove edges a previous pass wrote."),
+) -> None:
+    """Ask the model about pairs extraction co-mentioned and did not relate.
+
+    Extraction reads a chunk once and must find every entity and every relation
+    together. Measured on tr-law it does the first well and the second badly:
+    98.4% precision on the statutes a decision names, 13.1% recall on the CITES
+    edge to them. This is a second pass over exactly that gap, one question per
+    pair with the text in front of the model.
+
+    Candidates come from `MENTIONS`, never from the backbone. Choosing what to
+    ask by reading the gold would write the answers into the graph and then
+    score against them.
+
+    Edges written carry `verified: true`. `--forget` removes them, so a run is
+    repeatable and a bad pass is one command from undone.
+    """
+    from graphpack.backbone import session_scope
+    from graphpack.eval.contract import load_eval_rules
+    from graphpack.verify import forget_verified, verify
+
+    loaded = load_pack(pack)
+
+    if forget:
+        with session_scope() as session:
+            removed = forget_verified(session, loaded.name)
+        console.print(f"Removed {removed:,} verified edge(s) from {loaded.name}.")
+        return
+
+    rules = load_eval_rules(loaded.path("eval.yaml"))
+    chosen = next((t for t in rules.tasks if t.name == task), None)
+    if chosen is None:
+        err_console.print(
+            f"[red]No task '{task}' in {loaded.name}.[/red] "
+            f"Have: {', '.join(t.name for t in rules.tasks)}"
+        )
+        raise typer.Exit(code=1)
+
+    from graphpack.packs.loader import build_system
+
+    system = build_system(loaded)
+
+    with session_scope() as session:
+        report = verify(
+            session,
+            system.llm,
+            loaded.name,
+            chosen,
+            limit=limit,
+            dry_run=dry_run,
+            progress=lambda done, total: console.print(f"  {done}/{total}", style="dim"),
+        )
+
+    table = Table("", "count")
+    table.add_row("candidate pairs", f"{report.candidates:,}")
+    table.add_row("asked", f"{report.asked:,}")
+    table.add_row("confirmed", f"{report.confirmed:,}")
+    table.add_row("edges written", "— (dry run)" if dry_run else f"{report.written:,}")
+    if report.unparsed:
+        table.add_row("neither YES nor NO", f"{report.unparsed:,}")
+    if report.failed:
+        table.add_row("call failed", f"{report.failed:,}")
+    console.print(table)
+
+    if report.asked:
+        console.print(f"  [dim]confirmation rate {report.confirmed / report.asked:.1%}[/dim]")
+    for example in report.examples:
+        console.print(f"  [dim]confirmed: {example}[/dim]")
 
 
 @app.command("bench")

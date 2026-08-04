@@ -525,6 +525,60 @@ than something shaped around particular misses.
 The committed configuration keeps `holdout: 0.3`. Turning the check off after it
 came back favourable would be the one move that makes it worthless.
 
+### A second pass doubles relation recall, and its ceiling is somewhere else
+
+Extraction reads a chunk once and has to produce every entity *and* every
+relation from it. tr-law shows those two going very differently: 98.4% precision
+naming the statutes, 13.1% recall drawing the edge. So the edges were asked for
+separately — one question, one pair, with the text in front of the model.
+
+```bash
+uv run graphpack verify tr-law --task statute_citations_strict
+uv run graphpack eval tr-law
+```
+
+| `statute_citations_strict` | extraction alone | **+ verification pass** |
+|---|---:|---:|
+| precision | 90.9% [80.4–96.1] | 82.9% [75.3–88.6] |
+| **recall** | **13.1%** [10.0–16.8] | **26.2%** [22.1–30.8] |
+| F1 | 22.8% | **39.8%** |
+
+**Doubled, for twelve minutes on a local model and no money.** 372 candidate
+pairs, 255 confirmations — a 68.5% confirmation rate — and 243 distinct edges
+written. Precision paid eight points for it, which is the trade and is visible
+rather than absorbed.
+
+**The honesty constraint is the whole design.** Candidates come from `MENTIONS`,
+never from the backbone. Choosing which pairs to ask about by reading the gold
+would write the answers into the graph and then score against them, and the
+result would look exactly like an improvement. A test asserts the candidate
+query never traverses a backbone edge, because that is the kind of mistake that
+is invisible in the output.
+
+**And every number this graph now produces includes those edges**, so `eval`
+says so on every run:
+
+```
+243 edge(s) above came from `graphpack verify`, not from extraction.
+Remove them with `graphpack verify tr-law --forget` to score extraction alone.
+```
+
+**The ceiling was measured before the run, and it is not the relation.** An edge
+needs a subject, so this pass can only reach a statute in a chunk that also
+carries an extracted entity resolving to the *decision*:
+
+```
+4,209  chunks with any mention
+  896  ...mentioning a Statute
+  315  ...also mentioning a Decision   -> 35%
+```
+
+Two thirds of the statute-bearing chunks have nothing to attach a citation to.
+That is an entity-extraction gap wearing a relation-extraction gap's clothes,
+and it was worth twenty seconds of Cypher to find out before spending the run.
+It also predicts where the remaining recall is: not in asking better questions,
+but in extracting the decision itself more often.
+
 ### oss keeps four times as many of its relations as tr-law does
 
 The strict/loose split was applied to `oss` as well, and the contrast is the

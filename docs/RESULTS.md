@@ -1168,6 +1168,30 @@ this phase. The first 500 queries are 41.2% comparison questions against 38.0%
 overall; a seeded sample of 500 is 39.6%. The baseline row above is a check on
 that — 0.389 on the sample against 0.378 measured over the full set.
 
+### The reranker helps both metrics; it is not another trade
+
+Hiding metadata improved one measurement and cost the other, which raised the
+obvious question about the reranker. It does not do that. Same 500 queries, the
+same committed pack, scored both ways:
+
+| | rerank off | **rerank on** | change |
+|---|---:|---:|---:|
+| chunk level · MRR@10 | 0.466 | **0.700** | +0.234 |
+| chunk level · evidence recall@10 | 0.456 | **0.597** | +0.141 |
+| article level · MRR@10 | 0.762 | **0.857** | +0.095 |
+| article level · Hit@1 | 0.638 | **0.782** | +0.144 |
+| article level · Hit@10 | 0.982 | **0.991** | +0.009 |
+
+**Everything moves the same direction, and the size of the move is headroom.**
+Article-level scoring was already at 0.982 by Hit@10 before any reranking, so
+there was little left to win and it won +0.009 there and +0.144 at rank one.
+Chunk level had room and used it.
+
+That is the difference between a reranker and the metadata change. One re-orders
+results and can only help whatever is being counted; the other changed what got
+embedded, which helped one definition of a hit by making a chunk stand for
+itself and hurt the other by making it stand less for its article.
+
 ### Fusion and reranking mostly find the same thing
 
 Both improve retrieval, and the open question was whether they add up. Measured

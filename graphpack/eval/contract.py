@@ -71,7 +71,13 @@ class Task:
 
     @property
     def describes(self) -> str:
-        kind = self.relation if self.require_relation else f"mentions of {self.endpoint_label}"
+        # Only `document_edges` can score mentions instead of relations.
+        # `backbone_edges` always requires the relation, so labelling it
+        # "mentions of X" was wrong the moment this line stopped being a
+        # constant — which is the second time a description drifted from what
+        # the generator does.
+        loose = self.generator == "document_edges" and not self.require_relation
+        kind = f"mentions of {self.endpoint_label}" if loose else self.relation
         return f"{self.name} ({self.generator}: {kind})"
 
 

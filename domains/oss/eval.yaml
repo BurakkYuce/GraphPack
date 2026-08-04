@@ -34,6 +34,19 @@ tasks:
     endpoint_label: Package
     directed: true
 
+  # The same gold, scored against relation extraction rather than mentions.
+  # `document_edges` counts a mention that resolved unless told otherwise, and
+  # that is what every published `thread_package` figure measures. The strict
+  # pair is what says anything about MENTIONS_PACKAGE being extracted, which
+  # the ontology does declare as ISSUE -> PACKAGE.
+  - name: thread_package_strict
+    generator: document_edges
+    relation: MENTIONS_PACKAGE
+    backbone_relation: MENTIONS_PACKAGE
+    source_label: Issue
+    endpoint_label: Package
+    require_relation: true
+
   - name: dependencies
     generator: backbone_edges
     # The extracted relation being scored, as the ontology names it.

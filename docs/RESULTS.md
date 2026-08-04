@@ -174,6 +174,11 @@ reproduce the numbers above; it reproduces these:
 | **recall** | **85.2%** [78.2–90.2] | **86.2%** [77.8–91.7] |
 | F1 | 65.2% | 57.4% |
 
+`dependencies` moved the same way and for the same reason: 24 gold edges to 37,
+precision 17.6% to 30.0%, recall 12.5% to 16.2%. Both intervals are still ±13
+points wide, so that task still supports no conclusion — which is the finding it
+has supported since phase 4.
+
 **Recall is the row that matters and it does not move** — 85.2% against 86.2%,
 each inside the other's interval. Precision falls with its ceiling, and the
 ceiling falls because gold shrank: gold needs a resolved package, the schema
@@ -519,6 +524,28 @@ than something shaped around particular misses.
 
 The committed configuration keeps `holdout: 0.3`. Turning the check off after it
 came back favourable would be the one move that makes it worthless.
+
+### oss keeps four times as many of its relations as tr-law does
+
+The strict/loose split was applied to `oss` as well, and the contrast is the
+useful part:
+
+| | scores | precision | recall |
+|---|---|---:|---:|
+| `thread_package` | mentions of `Package` | 43.1% | 86.2% |
+| **`thread_package_strict`** | **`MENTIONS_PACKAGE` extracted** | 37.3% | **43.6%** |
+| tr-law `statute_citations_strict` | `CITES` extracted | 90.9% | 13.1% |
+
+**43.6% against tr-law's 13.1%**, from the same extractor and the same model.
+Whatever costs tr-law its relations is not a property of the pipeline — it is a
+property of the pack, or of the language, or of what "cites" looks like in a
+court decision against what "mentions" looks like in an issue thread. That is a
+question this split can now be pointed at, and could not be before.
+
+The precision direction is the reverse. tr-law draws few `CITES` edges and is
+right 90.9% of the time; oss draws many `MENTIONS_PACKAGE` edges and is right
+37.3%. Cautious and silent against talkative and wrong, measured rather than
+characterised.
 
 ### The task declared a relation and never checked it
 

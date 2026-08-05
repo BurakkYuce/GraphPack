@@ -96,6 +96,23 @@ denemesinde gördüğü sıçramadan büyük. Bedeli: aynı iş 25 kat uzun sür
 
 **Zorlanan: belgeyi yapay zekâya okutup pano kurdurmak.**
 
+*Ve burada kendi ölçümümüzde bir hata bulduk, sonuçtan daha öğretici.* "Model
+kararın hangi kanunlara atıf yaptığını %97 isabetle buluyor" diye yazmıştık.
+Aritmetiği kontrol edince tutmadı: grafta 1.242 atıf olması gerekirken 170 tane
+vardı. Sebep şuydu — ölçüm "karar bu kanuna atıf yapıyor mu" diye değil,
+"kararın metninde bu kanunun adı geçiyor mu" diye soruyormuş. İkisi farklı şey,
+ve isim ilkini vaat ediyordu.
+
+Şimdi üç seviye de ayrı ölçülüyor: **adı geçiyor mu %65**, **atıf bağı kurulmuş
+mu %26**, **atfı yapan kararın kendisi mi %11**. İlk sayı yanlış değildi, adı
+yanlıştı — ve gerçek zorluk bağı kurmakta, adı bulmakta değil.
+
+*Sonra bunu bir miktar düzelttik, bedavaya.* Modele "şu paragrafı oku, bu karar
+şu kanuna atıf yapıyor mu" diye tek tek sorduk — 12 dakika, yerel model. Bağ
+kurma **%13'ten %26'ya** çıktı. Ve tavanını önceden ölçtük: kanun geçen
+paragrafların sadece üçte birinde kararın kendisi de bir varlık olarak
+bulunmuş, yani kalan üçte iki aslında başka bir problem.
+
 *Pahalı — ama nerede koşturduğuna bağlı.* Bir dizüstü bilgisayarda 200 belgeyi
 okutmak **10,5 saat** sürdü. Aynı 200 belge, bulut üzerindeki bir modelde
 **4 dakika** ve yaklaşık 60 sent. Yani "yavaş" dediğimiz şey tasarımın değil,

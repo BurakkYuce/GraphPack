@@ -34,7 +34,12 @@ occasionally one general capability the domain was the first to need.
 **Status:** all phases run; both extraction domains measured on the same setup,
 both extracting 100% ontology-conforming relations.
 
-tr-law scores F1 81.4% (P 97.2%, R 70.0%) over 150 gold edges. oss took three
+tr-law scores F1 81.4% (P 97.2%, R 70.0%) over 150 gold edges **at mention
+level** — that is, extraction finding the statutes a decision names. Whether the
+graph records the decision as *citing* them is a different and much lower
+number: 26.2% recall on the relation, 11.3% with the decision as its subject.
+The task declared `relation: CITES` and the generator never read it, for two
+phases; all three levels are separate tasks now. oss took three
 written diagnoses to become measurable at all: not the model, not the extractor,
 not backbone coverage, but that 69% of its documents mention one package while
 its gold generator needed two. Giving its threads `Issue` nodes — configuration,

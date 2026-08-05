@@ -97,8 +97,14 @@ it was the gold generator. RESULTS.md keeps both as written rather than
 correcting them, because a prediction that was recorded before the run is worth
 more refuted than a diagnosis edited afterwards.
 
-**Extraction is measured in two domains now.** tr-law: F1 **81.4%**, precision
-97.2%, over 150 gold edges, interval ±5. oss took longer to become measurable at
+**Extraction is measured in two domains now, and the headline needs its
+qualifier.** tr-law: F1 **81.4%**, precision 97.2%, over 150 gold edges,
+interval ±5 — **at mention level**. That figure says extraction finds the
+statutes a decision names, which it does very well. It does not say the graph
+records that the decision *cites* them: scored on the relation, recall is
+**26.2%**, and scored on the relation with the decision as its subject, 11.3%.
+The task declared `relation: CITES` and the generator never read it, for two
+phases. All three levels are now separate tasks and RESULTS.md carries each. oss took longer to become measurable at
 all, and the reason it eventually was is the more useful half of the story —
 see the next section.
 

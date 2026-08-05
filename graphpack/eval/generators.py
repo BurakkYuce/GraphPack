@@ -52,6 +52,18 @@ WHERE chunk.ref_doc_id IS NOT NULL
 RETURN chunk.ref_doc_id AS document, collect(DISTINCT c.id) AS entities
 """
 
+#: The whole claim: the *document* is the subject, not merely something the
+#: document's chunks mention. See `Task.require_subject` for why the middle
+#: level is not a resting place.
+_SUBJECT_RELATED_PER_DOCUMENT = """
+MATCH (chunk)-[:MENTIONS]->(e:{entity} {{pack: $pack}})
+MATCH (e)-[:RESOLVED_AS]->(d:{source_label} {{pack: $pack}})
+MATCH (e)-[:{relation}]->(other:{entity} {{pack: $pack}})
+MATCH (other)-[:RESOLVED_AS]->(c:{label} {{pack: $pack}})
+WHERE chunk.ref_doc_id IS NOT NULL AND d.id = chunk.ref_doc_id
+RETURN chunk.ref_doc_id AS document, collect(DISTINCT c.id) AS entities
+"""
+
 _MENTIONS_PER_DOCUMENT = """
 MATCH (chunk)-[:MENTIONS]->(e:{entity} {{pack: $pack}})
 MATCH (e)-[:RESOLVED_AS]->(c:{label} {{pack: $pack}})
@@ -218,10 +230,14 @@ def document_edges(session, pack: str, task) -> tuple[set, set, dict]:
 
     mentions = reached
     if task.require_relation:
+        query = _SUBJECT_RELATED_PER_DOCUMENT if task.require_subject else _RELATED_PER_DOCUMENT
         mentions = {}
         for row in session.run(
-            _RELATED_PER_DOCUMENT.format(
-                entity=ENTITY_LABEL, label=task.endpoint_label, relation=task.relation
+            query.format(
+                entity=ENTITY_LABEL,
+                label=task.endpoint_label,
+                relation=task.relation,
+                source_label=task.source_label or task.endpoint_label,
             ),
             pack=pack,
         ):

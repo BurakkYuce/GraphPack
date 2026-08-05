@@ -68,6 +68,17 @@ class Task:
     #: reader could identify — but it is not the thing the name suggests, and
     #: both belong in the report.
     require_relation: bool = False
+    #: With ``require_relation``: also require the relation's *subject* to be
+    #: the document itself, rather than anything the document's chunks mention.
+    #:
+    #: The middle level is a strange place to stop and nothing chose it — it is
+    #: what the query happened to do. "Some entity in a chunk of this decision
+    #: cites statute S" is not "this decision cites statute S": the subject may
+    #: be a party, a lower court, or something that resolved to nothing at all.
+    #: Measured on tr-law, 392 predictions become 220 when the subject has to be
+    #: the decision; on oss, 110 become **zero**, because no extracted entity
+    #: there ever resolves to an Issue.
+    require_subject: bool = False
 
     @property
     def describes(self) -> str:
@@ -77,7 +88,12 @@ class Task:
         # constant — which is the second time a description drifted from what
         # the generator does.
         loose = self.generator == "document_edges" and not self.require_relation
-        kind = f"mentions of {self.endpoint_label}" if loose else self.relation
+        if loose:
+            kind = f"mentions of {self.endpoint_label}"
+        elif self.require_subject:
+            kind = f"{self.source_label or 'source'} -{self.relation}->"
+        else:
+            kind = self.relation
         return f"{self.name} ({self.generator}: {kind})"
 
 
@@ -158,4 +174,5 @@ def _parse_task(item: Any, path: Path, index: int) -> Task:
         source_label=str(item.get("source_label") or ""),
         directed=bool(item.get("directed", True)),
         require_relation=bool(item.get("require_relation", False)),
+        require_subject=bool(item.get("require_subject", False)),
     )

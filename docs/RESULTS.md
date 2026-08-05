@@ -525,6 +525,53 @@ than something shaped around particular misses.
 The committed configuration keeps `holdout: 0.3`. Turning the check off after it
 came back favourable would be the one move that makes it worthless.
 
+### There are three levels here, and only one of them is the claim
+
+Yesterday's finding was that `document_edges` scored mentions while declaring a
+relation. Adding the strict version exposed a second gap in the same place: it
+accepts *any* subject the document's chunks mention. "Some entity in a chunk of
+this decision cites statute S" is not "this decision cites statute S" — the
+subject may be a party, a lower court, or something that resolved to nothing.
+
+So the contract now expresses all three, and each is a task a pack opts into:
+
+| level | a prediction is | tr-law, `CITES` |
+|---|---|---:|
+| `mentions` (default) | the document's chunks name something resolving to the target | P 98.4% · R 65.4% |
+| `require_relation` | *something* in those chunks relates to the target | P 82.9% · R 26.2% |
+| `require_subject` | **the document itself** relates to the target | P 75.0% · **R 11.3%** |
+
+and on `CITES_ARTICLE`, P 65.1/R 73.6 → P 67.8/R 32.7 → P 55.1/**R 16.2%**.
+
+**Extraction almost never makes the document the subject of its own citation.**
+Counting predictions over the whole corpus, before any verification pass:
+
+| | any subject | **subject is the document** |
+|---|---:|---:|
+| `CITES` | 172 | **28** |
+| `CITES_ARTICLE` | 247 | **25** |
+
+Twenty-eight, against 1,242 gold edges. And `article_citations_subject` scored a
+flat **0.0%** before the verification pass ran, because extraction had produced
+no `Decision -CITES_ARTICLE-> Article` edge at all — every one of its strict
+predictions came from a subject that was not the decision.
+
+**oss cannot reach this level, and the reason is configuration.** Its
+`MENTIONS_PACKAGE` subjects are 128 unresolved entities and one `Repository`;
+none is an `Issue`, because the pack declares no resolve rule for `ISSUE` —
+which `packs validate` has warned about all along, as a note nobody had a number
+for. So oss's 43.6% strict recall is entirely earned by edges whose subject is
+not the thread, and its subject-level task scores zero by construction. The
+warning now has a number attached, which is the difference between a note and a
+finding.
+
+**Which level should be quoted?** The last one, when the question is "does the
+graph say this document cites that statute". The first, when the question is
+"can extraction find the statutes a decision names" — and it answers that
+extremely well. The middle one is not a resting place; it exists because a query
+happened to stop there, and it is kept only so the numbers published under it
+remain checkable.
+
 ### A second pass doubles relation recall, and its ceiling is somewhere else
 
 Extraction reads a chunk once and has to produce every entity *and* every
@@ -547,6 +594,11 @@ uv run graphpack eval tr-law
 pairs, 255 confirmations — a 68.5% confirmation rate — and 243 distinct edges
 written. Precision paid eight points for it, which is the trade and is visible
 rather than absorbed.
+
+The same pass on `article_citations_strict`: 347 candidates, 218 confirmations
+at 62.8%, recall 24.2% → **32.7%**. And it produced the pack's first
+`Decision -CITES_ARTICLE-> Article` edges of any kind — that subject-level task
+read 0.0% before it ran. 456 verified edges across both.
 
 **The honesty constraint is the whole design.** Candidates come from `MENTIONS`,
 never from the backbone. Choosing which pairs to ask about by reading the gold

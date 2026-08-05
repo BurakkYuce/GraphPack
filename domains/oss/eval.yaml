@@ -66,5 +66,23 @@ tasks:
 # That changes the moment the error analysis feeds back into aliases.csv or a
 # normaliser — which is exactly what phase 4 is for. Set this to 0.3 before the
 # first such change, and say in the report which numbers came from which side.
+  # The whole claim, and the level the other two stop short of.
+  #
+  # `require_relation` accepts any subject the document's chunks mention, which
+  # is neither "the document names it" nor "the document says it cites it" —
+  # the subject may be a party, a lower court, or something that resolved to
+  # nothing. Requiring the subject to be the document itself is what the task's
+  # name has always sounded like.
+
+  - name: thread_package_subject
+    generator: document_edges
+    relation: MENTIONS_PACKAGE
+    backbone_relation: MENTIONS_PACKAGE
+    source_label: Issue
+    endpoint_label: Package
+    directed: true
+    require_relation: true
+    require_subject: true
+
 holdout: 0.0
 seed: 0

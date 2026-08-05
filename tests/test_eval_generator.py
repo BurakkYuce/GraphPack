@@ -353,3 +353,40 @@ class _Result(list):
 
     def single(self):
         return self[0] if self else None
+
+
+@pytest.mark.unit
+def test_require_subject_needs_the_document_to_be_the_subject():
+    """The third level, and the one the task name always sounded like.
+
+    `require_relation` accepts any subject the document's chunks mention, which
+    is neither "the document names it" nor "the document says it cites it".
+    Measured on tr-law that middle level counts 392 pairs where 220 have the
+    decision as subject; on oss it counts 110 where zero do.
+    """
+    from graphpack.eval.contract import Task
+    from graphpack.eval.generators import _RELATED_PER_DOCUMENT, _SUBJECT_RELATED_PER_DOCUMENT
+
+    loose = _RELATED_PER_DOCUMENT.format(entity="E", label="Statute", relation="CITES")
+    tight = _SUBJECT_RELATED_PER_DOCUMENT.format(
+        entity="E", label="Statute", relation="CITES", source_label="Decision"
+    )
+
+    # The tight query is the loose one plus an identity check between the
+    # relation's subject and the chunk's own document.
+    assert "d.id = chunk.ref_doc_id" in tight
+    assert "d.id = chunk.ref_doc_id" not in loose
+
+    task = Task(
+        name="t",
+        generator="document_edges",
+        relation="CITES",
+        backbone_relation="CITES",
+        endpoint_label="Statute",
+        source_label="Decision",
+        require_relation=True,
+        require_subject=True,
+    )
+    # And the description says which level it is, because two of the three
+    # would otherwise print identically.
+    assert "Decision -CITES->" in task.describes

@@ -95,5 +95,33 @@ tasks:
 # particular misses; it is the shape every article citation in the language has.
 #
 # RESULTS.md carries both numbers, and says which is which.
+  # The whole claim, and the level the other two stop short of.
+  #
+  # `require_relation` accepts any subject the document's chunks mention, which
+  # is neither "the document names it" nor "the document says it cites it" —
+  # the subject may be a party, a lower court, or something that resolved to
+  # nothing. Requiring the subject to be the document itself is what the task's
+  # name has always sounded like.
+
+  - name: statute_citations_subject
+    generator: document_edges
+    relation: CITES
+    backbone_relation: CITES
+    source_label: Decision
+    endpoint_label: Statute
+    directed: true
+    require_relation: true
+    require_subject: true
+
+  - name: article_citations_subject
+    generator: document_edges
+    relation: CITES_ARTICLE
+    backbone_relation: CITES_ARTICLE
+    source_label: Decision
+    endpoint_label: Article
+    directed: true
+    require_relation: true
+    require_subject: true
+
 holdout: 0.3
 seed: 0

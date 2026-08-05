@@ -76,10 +76,15 @@ Its Hit@K is recall over a query's whole evidence set; ours asked whether any
 one piece was found. Both made our task easier.
 
 **The reranker is the largest single lever, and larger here than in the paper.**
-`bge-reranker-large` over the same 500 sampled queries: **MRR@10 0.466 →
-0.700**, evidence recall@10 0.456 → 0.597. The paper reports +0.193 for its own
-pair from a nearly identical starting point; this is +0.234. It costs 25× the
-wall clock, and that is with the GPU.
+`bge-reranker-large` over all 2,255 queries: **MRR@10 0.449 → 0.654**, evidence
+recall@10 0.440 → 0.572. The paper reports +0.193 for its own pair from a nearly
+identical starting point; this is +0.205. It costs 5 h 40 m against 18 minutes,
+and that is with the GPU.
+
+It was measured on a seeded 500-query sample first, and the sample was outside
+its own 95% intervals on two of four Hit@k figures — because those intervals are
+per-metric while the draw is shared, so one slightly-easy sample moves all of
+them together. The conclusion held; the numbers moved by up to 0.046.
 
 **Hybrid retrieval buys the middle of the ranking.** Every figure this project
 first published was the vector leg alone — not by choice, but because the

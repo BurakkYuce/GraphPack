@@ -53,8 +53,7 @@ MultiHop-RAG, measured at the paper's own granularity with its own embedding
 model, **MRR@10 0.417 against its published 0.4203** — a reproduction, and one
 that took correcting our own metric first: the same run reads 0.759 under the
 looser definition this project used at the time, which is why
-[RESULTS.md](docs/RESULTS.md) carries both and says which is which. Adding
-`bge-reranker-large` takes 0.466 to **0.700** on the committed configuration.
+[RESULTS.md](docs/RESULTS.md) carries both and says which is which. `bge-reranker-large` takes 0.449 to **0.654** over all 2,255 queries.
 
 - [docs/WRITEUP.md](docs/WRITEUP.md) — what the project claims, what it showed,
   and where it is weak

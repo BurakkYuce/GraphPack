@@ -91,8 +91,16 @@ yakalandı, ve yakalamak için önce kendi ölçümümüzü düzeltmek gerekti.
 
 **Sonra bir şey ekledik ve en büyük sıçramayı o yaptı.** "Yeniden sıralayıcı"
 denen ikinci bir model, aramanın getirdiği 60 parçayı soruyla birlikte tekrar
-okuyup en iyi 20'yi seçiyor. Skor **0,466'dan 0,700'e** çıktı — makalenin kendi
-denemesinde gördüğü sıçramadan büyük. Bedeli: aynı iş 25 kat uzun sürüyor.
+okuyup en iyi 20'yi seçiyor. Skor **0,449'dan 0,654'e** çıktı — makalenin kendi
+denemesinde gördüğü sıçramadan büyük. Bedeli: aynı iş 19 kat uzun sürüyor,
+18 dakika yerine 5 saat 40 dakika.
+
+*Bunu önce 500 soruluk bir örneklemde ölçtük ve örneklem yanılttı.* Ölçüm
+yöntemi her sayının yanına bir "artı eksi" payı koyar; tam koşumda çıkan gerçek
+değer o payın **dışında** kaldı. Sebebi şu: pay her sayı için ayrı hesaplanıyor
+ama örneklem hepsinde ortak. Biraz kolay bir örneklem çekmişsen bütün sayılar
+birlikte yukarı kayar — yani dört ayrı "artı eksi", dört ayrı şans değil, tek
+bir şansın dört kez yazılmış hâli.
 
 **Zorlanan: belgeyi yapay zekâya okutup pano kurdurmak.**
 

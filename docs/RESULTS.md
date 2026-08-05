@@ -1306,22 +1306,58 @@ uv run graphpack bench bench-wiki --chunk-level --top-k 20 --sample 500 --seed 0
 Same 500 queries both times, same corpus, same depth. The only difference is a
 cross-encoder re-ordering what the vector leg returned.
 
+All 2,255 answerable queries, not a sample — the reranked half is 5 h 40 m of
+local GPU and zero failed retrievals:
+
 | | rerank off | **rerank on** | change |
 |---|---:|---:|---:|
-| MRR@10 | 0.466 | **0.700** | **+0.234** |
-| evidence recall@10 | 0.456 | **0.597** | +0.141 |
-| evidence recall@4 | 0.302 | **0.472** | +0.170 |
-| Hit@1 (any) | 0.335 | **0.606** | +0.271 |
-| Hit@10 (any) | 0.791 | **0.897** | +0.106 |
-| wall clock | ~4 min | **~100 min** | 25× |
+| MRR@10 | 0.449 | **0.654** | **+0.205** |
+| evidence recall@10 | 0.440 | **0.572** | +0.132 |
+| evidence recall@4 | 0.283 | **0.440** | +0.157 |
+| Hit@1 (any) | 0.310 | **0.538** | +0.228 |
+| Hit@10 (any) | 0.780 | **0.890** | +0.110 |
+| wall clock | ~18 min | **5 h 40 m** | 19× |
 
 Both rows are the committed configuration — 1024-token chunks with metadata
-hidden from the embedding. Measured first on the previous setup and re-measured
-here when that changed, which is worth a line of its own: the reranker's *gain*
-shrank as the baseline improved (+0.271 against a 0.389 baseline, +0.234 against
-0.466) while the reranked score itself rose, 0.660 to 0.700. A reranker recovers
-what retrieval put within reach; make retrieval better and there is less to
-recover and a higher place to recover it to.
+hidden from the embedding. The reranker's *gain* has shrunk each time the
+baseline improved (+0.271 against a 0.389 baseline, +0.205 against 0.449) while
+the reranked score rose with it. A reranker recovers what retrieval put within
+reach; make retrieval better and there is less to recover and a higher place to
+recover it to.
+
+#### The 500-query sample was outside its own intervals
+
+This was measured on a seeded sample first, and the sample was optimistic on
+every figure:
+
+| | sample of 500 | **all 2,255** | sample's 95% interval | contains? |
+|---|---:|---:|---|---|
+| MRR@10, reranked | 0.700 | **0.654** | — | — |
+| evidence recall@10 | 0.597 | **0.572** | — | — |
+| Hit@1 (any) | 0.606 | **0.538** | 0.559 – 0.650 | **no** |
+| Hit@2 (any) | 0.718 | **0.670** | 0.674 – 0.758 | **no** |
+| Hit@4 (any) | 0.789 | 0.774 | 0.748 – 0.825 | yes |
+| Hit@10 (any) | 0.897 | 0.890 | 0.865 – 0.922 | yes |
+
+Two of four outside, which is not what "95%" is supposed to look like — and the
+explanation is not that the intervals are wrong. **They are per-metric, and the
+draw is shared.** One sample that happens to be slightly easy moves every metric
+computed on it in the same direction at once, so four intervals from one sample
+are not four independent chances to be right; they are one chance, reported four
+times.
+
+The conclusion survives — reranking is still the largest lever measured here,
+and +0.205 still exceeds the +0.193 the paper reports. But the sampled figures
+overstated the baseline by 0.017, the reranked score by 0.046, and the gain
+itself by 0.029. Everything above now comes from the full set, and the sampled
+numbers are kept here rather than deleted because the gap between them is the
+point.
+
+**What this costs elsewhere in this document.** The fusion/reranking 2×2 below
+is still a 500-query measurement in all four cells. It stays that way, because
+its cells are internally consistent and re-running the reranked hybrid corner is
+another six hours — but its *absolute* values should be read as this table's
+sampled column, not as the full-set numbers here.
 
 **The paper reports +0.193 MRR for its own pair** (voyage-02 0.393 →
 bge-reranker-large 0.586). This pipeline gains +0.271 from a nearly identical
@@ -1339,7 +1375,7 @@ cross-encoder can promote past the cut, which is the effect being measured.
 | | MRR@10 | Hits@10 |
 |---|---:|---:|
 | paper, voyage-02 + bge-reranker-large — their best | 0.5860 | **0.7467** |
-| ours, nomic + bge-reranker-large, 500 queries | **0.700** | 0.597 |
+| ours, nomic + bge-reranker-large, all 2,255 | **0.654** | 0.572 |
 
 The same split as F2, and the same explanation. MRR is above; evidence recall is
 below. Our chunks are 1024 tokens against the paper's 256, which costs nothing
@@ -1610,13 +1646,16 @@ question.
   and the embedding model — `mxbai-embed-large` buys +0.017 against 0.165
   missing. What remains is the relevance criterion itself, and testing that
   needs the paper's matching code rather than another run here.
-- ~~**Reranking.**~~ Run: MRR@10 0.466 → **0.700** with `bge-reranker-large`,
-  against the +0.193 the paper reports for its own pair. See
-  [The reranker, measured](#the-reranker-measured).
-- **Reranking on the full 2,255 queries.** Measured on a seeded sample of 500,
-  because the full set is 14 hours on this machine's GPU. The intervals are
-  ±4 points and the effect is +27, so the conclusion does not depend on it —
-  but the number in the table is a sample's.
+- ~~**Reranking.**~~ Run over all 2,255 queries: MRR@10 0.449 → **0.654** with
+  `bge-reranker-large`, against the +0.193 the paper reports for its own pair.
+  See [The reranker, measured](#the-reranker-measured).
+- ~~**Reranking on the full 2,255 queries.**~~ Run, 5 h 40 m, zero failed
+  retrievals — and it moved the sampled figures by more than their own
+  intervals allowed. See
+  [The 500-query sample was outside its own intervals](#the-500-query-sample-was-outside-its-own-intervals).
+- **The fusion/reranking 2×2 on the full set.** Still 500 queries in all four
+  cells. Internally consistent, but its absolute values are a sample's, and the
+  reranked hybrid corner is another six hours.
 - ~~**Reranking with hybrid retrieval.**~~ Measured as a 2×2: they overlap.
   Separately +0.052 and +0.234 MRR; together +0.253, not +0.286. See
   [Fusion and reranking mostly find the same thing](#fusion-and-reranking-mostly-find-the-same-thing).
